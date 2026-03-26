@@ -1,9 +1,9 @@
 <?php
 
 namespace App\Http\Controllers;
+use Illuminate\Http\Request;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 
@@ -19,7 +19,7 @@ class apiController extends Controller
 
         $phone = $req->input('phone');
         $email = $req->input('email');
-        $password = $req->input('password');
+        $password = trim($req->input('password'));
 
         $loginField = $email ? 'email' : 'phone';
         $loginValue = $email ?: $phone;
@@ -31,16 +31,11 @@ class apiController extends Controller
             return Response::json($data);
         }
 
-        $check = DB::select("select * from users where $loginField = '$loginValue' and status=1");
+        $user = User::where($loginField, $loginValue)->where('status', 1)->first();
 
-        if(!empty($check)){
-            $password = md5($password);
+        if($user){
+            if($user->password === md5($password)){
 
-            $check_all = DB::select("select * from users where $loginField = '$loginValue' and password = '$password' and status=1");
-
-            if(!empty($check_all)){
-
-                $user = $check_all[0];
                 unset($user->password);
 
                 $data['message'] = 'data get successfully';
@@ -76,7 +71,7 @@ class apiController extends Controller
 
         $name = $req->input('name');
         $phone = $req->input('phone');
-        $password = $req->input('password');
+        $password = trim($req->input('password'));
 
         $email = $req->input('email');
 
