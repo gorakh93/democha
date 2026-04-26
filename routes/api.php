@@ -28,3 +28,8 @@ Route::post('/update-address', [apiController::class,'update_address']);
 Route::post('/get-bills', [apiController::class,'get_bills']);
 
 Route::post('/save-bills', [apiController::class,'save_bills']);
+
+Route::post('/profile-image-upload', [apiController::class,'profileImageUpload']);
+Route::post('/bill-file-upload', [apiController::class,'billFileUpload']);
+
+Route::post('/get-gst-no', [apiController::class,'getGstNo']);

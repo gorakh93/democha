@@ -5,10 +5,14 @@ use Illuminate\Http\Request;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
 
 use App\Models\User;
 use App\Models\Address;
+use Google\Cloud\DocumentAI\V1\Client\DocumentProcessorServiceClient;
+use Google\Cloud\DocumentAI\V1\ProcessRequest;
+use Google\Cloud\DocumentAI\V1\RawDocument;
 
 
 class apiController extends Controller
@@ -451,6 +455,228 @@ class apiController extends Controller
             $data['status'] = 200;
         } catch (\Exception $e) {
             $data['message'] = 'Error saving bill: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function profileImageUpload(Request $req) {
+
+        $base64_str = $req->input('imgstr');
+        $userid = $req->input('userid');
+
+        //decode base64 string
+
+         if($base64_str != ''){
+            $image = base64_decode($base64_str);
+
+            $imageName = uniqid().'.'.'png';
+            $resp = Storage::disk('public')->put('profile_pic/'.$imageName, $image);
+
+            $profilePic = 'profile_pic/'.$imageName;
+            
+            User::where('id', $userid)->update(['profilePic' => $profilePic]);
+        }
+
+        $response['message'] = 'image uploaded successfully';
+        $response['data'] = $profilePic;
+        $response['status'] = 200;
+
+        return Response::json($response);
+    }
+
+    public function billFileUpload(Request $req) {
+
+        $base64_str = $req->input('filestr');
+        $userid = $req->input('userid');
+
+        //decode base64 string
+
+         if($base64_str != ''){
+            $file = base64_decode($base64_str);
+
+            $fileName = uniqid().'.'.'pdf';
+            $resp = Storage::disk('public')->put('bill_files/'.$fileName, $file);
+
+            $bill_file = 'bill_files/'.$fileName;
+
+            $billId = $this->getInvoiceInfo($userid, $bill_file);
+
+        }
+
+        $response['message'] = 'file uploaded and bill data extracted successfully';
+        $response['data'] = ['bill_file' => $bill_file, 'bill_id' => $billId];
+        $response['status'] = 200;
+
+        return Response::json($response);
+    }
+
+    public function getInvoiceInfo($userid,$filePath){
+
+        try {
+            // Get file content from storage
+            $content = Storage::disk('public')->get($filePath);
+
+            // Create client
+            $client = new DocumentProcessorServiceClient();
+            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id');
+            $location = env('DOCUMENT_AI_LOCATION', 'us');
+            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'your-processor-id');
+            $processorName = $client->processorName($projectId, $location, $processorId);
+
+            // Create raw document
+            $rawDocument = new RawDocument();
+            $rawDocument->setContent($content);
+            $rawDocument->setMimeType('application/pdf');
+
+            // Create process request
+            $request = new ProcessRequest();
+            $request->setName($processorName);
+            $request->setRawDocument($rawDocument);
+
+            // Process the document
+            $response = $client->processDocument($request);
+            $document = $response->getDocument();
+
+            // Initialize extracted data
+            $extracted = [
+                'order_number' => null,
+                'phone' => null,
+                'gstnumber' => null,
+                'cgst' => null,
+                'igst' => null,
+                'bill_number' => null,
+                'sub_total' => null,
+                'total_amount' => null,
+                'bill_date' => null,
+            ];
+
+            // Extract data from entities
+            foreach ($document->getEntities() as $entity) {
+                $type = strtolower($entity->getType());
+                $text = $entity->getMentionText();
+
+                if ($type == 'invoice_id' || strpos($type, 'bill_number') !== false) {
+                    $extracted['bill_number'] = $text;
+                } elseif ($type == 'invoice_date' || strpos($type, 'date') !== false) {
+                    $extracted['bill_date'] = $text;
+                } elseif ($type == 'total_amount' || $type == 'total') {
+                    $extracted['total_amount'] = $text;
+                } elseif ($type == 'net_amount' || strpos($type, 'subtotal') !== false || $type == 'sub_total') {
+                    $extracted['sub_total'] = $text;
+                } elseif ($type == 'supplier_tax_id' || strpos($type, 'gst') !== false) {
+                    $extracted['gstnumber'] = $text;
+                } elseif ($type == 'supplier_phone' || strpos($type, 'phone') !== false || strpos($type, 'mobile') !== false) {
+                    $extracted['phone'] = $text;
+                } elseif (strpos($type, 'order') !== false || $type == 'purchase_order') {
+                    $extracted['order_number'] = $text;
+                } elseif (strpos($type, 'cgst') !== false) {
+                    $extracted['cgst'] = $text;
+                } elseif (strpos($type, 'igst') !== false) {
+                    $extracted['igst'] = $text;
+                }
+            }
+
+            // Clean phone number
+            if ($extracted['phone']) {
+                $extracted['phone'] = str_replace('+91', '', $extracted['phone']);
+                $extracted['phone'] = trim($extracted['phone']);
+            }
+
+            // Parse bill_date if present
+            $billDate = null;
+            if ($extracted['bill_date']) {
+                try {
+                    $billDate = \Carbon\Carbon::parse($extracted['bill_date'])->format('Y-m-d');
+                } catch (\Exception $e) {
+                    $billDate = null;
+                }
+            }
+
+            // Insert into bills table
+            $billId = DB::table('bills')->insertGetId([
+                'userid' => $userid,
+                'gstnumber' => $extracted['gstnumber'],
+                'bill_number' => $extracted['bill_number'],
+                'cgst' => $extracted['cgst'] ? floatval($extracted['cgst']) : null,
+                'igst' => $extracted['igst'] ? floatval($extracted['igst']) : null,
+                'phone' => $extracted['phone'],
+                'bill_date' => $billDate,
+                'total_amount' => $extracted['total_amount'] ? floatval($extracted['total_amount']) : null,
+                'gross_amount' => $extracted['sub_total'] ? floatval($extracted['sub_total']) : null,
+                'order_number' => $extracted['order_number'],
+                'bill_file' => $filePath,
+                'created_at' => now()
+            ]);
+
+            return $billId;
+
+        } catch (\Exception $e) {
+            // If extraction fails, still save with minimal data
+            $billId = DB::table('bills')->insertGetId([
+                'userid' => $userid,
+                'bill_file' => $filePath,
+                'created_at' => now()
+            ]);
+
+            return $billId;
+        }
+    }
+
+    public function getGstNo(Request $req){
+
+        $filePath = $req->input('file_path', 'bill_files/69dbefebbce8b.pdf');
+
+        //echo $filePath;die;
+
+        try {
+            // Get file content from storage
+            $content = Storage::disk('public')->get($filePath);
+
+            // Create client
+            $client = new DocumentProcessorServiceClient();
+            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id');
+            $location = env('DOCUMENT_AI_LOCATION', 'us');
+            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'your-processor-id');
+            $processorName = $client->processorName($projectId, $location, $processorId);
+
+            // Create raw document
+            $rawDocument = new RawDocument();
+            $rawDocument->setContent($content);
+            $rawDocument->setMimeType('application/pdf');
+
+            // Create process request
+            $request = new ProcessRequest();
+            $request->setName($processorName);
+            $request->setRawDocument($rawDocument);
+
+            // Process the document
+            $response = $client->processDocument($request);
+            $document = $response->getDocument();
+
+            // Extract GST number - assuming it's in the entities
+            $gstNumber = null;
+            foreach ($document->getEntities() as $entity) {
+                if ($entity->getType() == 'supplier_tax_id' || $entity->getType() == 'gst_number' || strpos(strtolower($entity->getType()), 'gst') !== false) {
+                    $gstNumber = $entity->getMentionText();
+                    break;
+                }
+            }
+
+            if ($gstNumber) {
+                $data['message'] = 'GST number extracted successfully';
+                $data['data'] = ['gst_number' => $gstNumber];
+                $data['status'] = 200;
+            } else {
+                $data['message'] = 'GST number not found';
+                $data['data'] = [];
+                $data['status'] = 204;
+            }
+        } catch (\Exception $e) {
+            $data['message'] = 'Error processing document: ' . $e->getMessage();
             $data['data'] = [];
             $data['status'] = 500;
         }
