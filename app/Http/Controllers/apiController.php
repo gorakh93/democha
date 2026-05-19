@@ -402,7 +402,7 @@ class apiController extends Controller
         $data['message'] = 'Bills retrieved successfully';
         $data['data'] = array_values($grouped); // return as array of month groups
         $data['status'] = 200;
-
+        $data['base_url'] = url('/storage/');
         return Response::json($data);
     }
 
