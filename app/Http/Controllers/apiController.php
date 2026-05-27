@@ -387,12 +387,8 @@ class apiController extends Controller
             $grouped[$key]['bills'][] = $bill;
 
             // Sum total_price for this group, fallback to amount or total
-            if (isset($bill->total_price)) {
-                $grouped[$key]['total'] += floatval($bill->total_price);
-            } elseif (isset($bill->amount)) {
-                $grouped[$key]['total'] += floatval($bill->amount);
-            } elseif (isset($bill->total)) {
-                $grouped[$key]['total'] += floatval($bill->total);
+            if (isset($bill->total_amount)) {
+                $grouped[$key]['total'] += floatval($bill->total_amount);
             }
         }
 
@@ -553,11 +549,14 @@ class apiController extends Controller
                 'total_amount' => null,
                 'bill_date' => null,
             ];
-
+            
+            //print_r($document->getEntities());die;
             // Extract data from entities
             foreach ($document->getEntities() as $entity) {
                 $type = strtolower($entity->getType());
                 $text = $entity->getMentionText();
+
+                //echo $type . ' => ' . $text . "\n";
 
                 if ($type == 'invoice_id' || strpos($type, 'bill_number') !== false) {
                     $extracted['bill_number'] = $text;
@@ -573,10 +572,12 @@ class apiController extends Controller
                     $extracted['phone'] = $text;
                 } elseif (strpos($type, 'order') !== false || $type == 'purchase_order') {
                     $extracted['order_number'] = $text;
-                } elseif (strpos($type, 'cgst') !== false) {
+                } elseif (strpos($type, 'cgst') !== false || strpos($type, 'total_tax_amount') !== false) {
                     $extracted['cgst'] = $text;
-                } elseif (strpos($type, 'igst') !== false) {
+                } elseif (strpos($type, 'igst') !== false || strpos($type, 'total_tax_amount') !== false) {
                     $extracted['igst'] = $text;
+                }elseif (strpos($type, 'supplier_name') !== false) {
+                    $extracted['merchant_name'] = $text;
                 }
             }
 
@@ -604,6 +605,7 @@ class apiController extends Controller
                 'cgst' => $extracted['cgst'] ? floatval($extracted['cgst']) : null,
                 'igst' => $extracted['igst'] ? floatval($extracted['igst']) : null,
                 'phone' => $extracted['phone'],
+                'merchant_name' => $extracted['merchant_name'],
                 'bill_date' => $billDate,
                 'total_amount' => $extracted['total_amount'] ? floatval($extracted['total_amount']) : null,
                 'gross_amount' => $extracted['sub_total'] ? floatval($extracted['sub_total']) : null,
