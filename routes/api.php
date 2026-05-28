@@ -40,6 +40,10 @@ Route::post('/product-image', [apiController::class,'getProductImage']);
 
 Route::post('/saving-offers', [apiController::class,'saving_offer']);
 
+Route::post('/offerImgUpload', [apiController::class,'offerImageUpload']);
+
+
+
 
 
 

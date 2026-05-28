@@ -847,6 +847,29 @@ class apiController extends Controller
             'data' => $result
         ], 200);
     }
+    public function offerImageUpload(Request $req) {
+
+        $base64_str = $req->input('imgstr');
+
+        $offerPic = '';
+
+        //decode base64 string
+
+         if($base64_str != ''){
+            $image = base64_decode($base64_str);
+
+            $imageName = uniqid().'.'.'png';
+            $resp = Storage::disk('public')->put('offers/'.$imageName, $image);
+
+            $offerPic = 'offers/'.$imageName;
+        }
+
+        $response['message'] = 'image uploaded successfully';
+        $response['data'] = $offerPic;
+        $response['status'] = 200;
+
+        return Response::json($response);
+    }
 
 
     
