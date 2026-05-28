@@ -517,7 +517,12 @@ class apiController extends Controller
             $content = Storage::disk('public')->get($filePath);
 
             // Create client
-            $client = new DocumentProcessorServiceClient();
+            //$client = new DocumentProcessorServiceClient();
+
+                    $client = new DocumentProcessorServiceClient([
+    'credentials' => storage_path('spendit.json')
+]);
+
             $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id');
             $location = env('DOCUMENT_AI_LOCATION', 'us');
             $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'your-processor-id');
@@ -684,6 +689,163 @@ class apiController extends Controller
         }
 
         return Response::json($data);
+    }
+
+
+
+     public function HomePageGraphData(Request $req){
+      
+        $userid = $req->input('userid');
+    
+            if (!$userid) {
+                $data['message'] = 'User ID is required';
+                $data['data'] = [];
+                $data['status'] = 400;
+                return Response::json($data);
+            }
+    
+// Query bills by user and group by year/month
+            $bills = DB::table('bills')
+                ->select(
+                    DB::raw("DATE_FORMAT(bill_date, '%Y') as year"),
+                    DB::raw("DATE_FORMAT(bill_date, '%m') as month"),
+                    DB::raw("SUM(total_amount) as total"),
+                    DB::raw("SUM(COALESCE(cgst, 0) + COALESCE(igst, 0)) as gst")
+                )
+                ->where('userid', $userid)
+                ->whereNotNull('bill_date')
+                ->groupBy(DB::raw("DATE_FORMAT(bill_date, '%Y')"), DB::raw("DATE_FORMAT(bill_date, '%m')"))
+                ->orderByDesc(DB::raw("DATE_FORMAT(bill_date, '%Y-%m')"))
+                ->get();
+
+            if($bills->isEmpty()) {
+                $data['message'] = 'No bills found for this user';
+                $data['data'] = [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            // Format data for graph
+            $graphData = [];
+            foreach ($bills as $bill) {
+                $graphData[] = [
+                    'year' => $bill->year,
+                    'month' => $bill->month,
+                    'total' => floatval($bill->total),
+                    'gst' => floatval($bill->gst)
+                ];
+            }
+    
+            $data['message'] = 'Graph data retrieved successfully';
+            $data['data'] = $graphData;
+            $data['status'] = 200;
+            return Response::json($data);
+     }
+
+
+     public function BillBreakDown(Request $req){
+
+        $userid = $req->input('userid');
+        $month = $req->input('month');
+        $year = $req->input('year');
+
+        if (!$userid || !$month || !$year) {
+            $data['message'] = 'User ID, month and year are required';
+            $data['data'] = [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        // Query bills by user and filter by month/year
+        $bills = DB::table('bills')
+            ->select(
+                DB::raw("SUM(total_amount) as total"),
+                DB::raw("SUM(COALESCE(gross_amount, 0)) as subtotal"),
+                DB::raw("SUM(COALESCE(cgst, 0)) as cgst"),
+                DB::raw("SUM(COALESCE(igst, 0)) as igst")
+            )
+            ->where('userid', $userid)
+            ->whereRaw("YEAR(bill_date) = ?", [$year])
+            ->whereRaw("MONTH(bill_date) = ?", [$month])
+            ->first();
+
+        if(!$bills || ($bills->total === null && $bills->subtotal === null)) {
+            $data['message'] = 'No bills found for this month';
+            $data['data'] = [];
+            $data['status'] = 204;
+            return Response::json($data);
+        }
+
+        $response['message'] = 'Bill breakdown retrieved successfully';
+        $response['data'] = [
+            'total' => floatval($bills->total),
+            'subtotal' => floatval($bills->subtotal),
+            'cgst' => floatval($bills->cgst),
+            'igst' => floatval($bills->igst)
+        ];
+        $response['status'] = 200;
+
+        return Response::json($response);
+     }
+
+    public function getProductImage()
+    {
+        // The path relative to storage/app/public/
+        $relativePath = 'offers/offer1.jpeg';
+
+        // Check if the file actually exists
+        if (Storage::disk('public')->exists($relativePath)) {
+            
+            // Generate the full absolute URL
+            $imageUrl = Storage::disk('public')->url($relativePath);
+            // Alternatively, you can use: $imageUrl = asset('storage/' . $relativePath);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Image retrieved successfully.',
+                'image_url' => $imageUrl
+            ], 200);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Image not found.'
+        ], 404);
+    }
+
+
+    public function saving_offer(Request $req){
+        // Return all active saving offers
+        $offers = DB::table('saving_offer')
+            ->where('status', 1)
+            ->get();
+
+        if ($offers->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active offers found.',
+                'data' => []
+            ], 204);
+        }
+
+        $result = [];
+        foreach ($offers as $offer) {
+            $offer = (array) $offer;
+
+            if (!empty($offer['image']) && Storage::disk('public')->exists($offer['image'])) {
+                $offer['image_url'] = Storage::disk('public')->url($offer['image']);
+            } else {
+                $offer['image_url'] = null;
+            }
+
+            $result[] = $offer;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Active offers retrieved successfully.',
+            'data' => $result
+        ], 200);
     }
 
 

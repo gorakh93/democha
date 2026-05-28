@@ -33,3 +33,13 @@ Route::post('/profile-image-upload', [apiController::class,'profileImageUpload']
 Route::post('/bill-file-upload', [apiController::class,'billFileUpload']);
 
 Route::post('/get-gst-no', [apiController::class,'getGstNo']);
+Route::post('/graph-data', [apiController::class,'HomePageGraphData']);
+Route::post('/bill-breakdown', [apiController::class,'BillBreakDown']);
+
+Route::post('/product-image', [apiController::class,'getProductImage']);
+
+Route::post('/saving-offers', [apiController::class,'saving_offer']);
+
+
+
+
