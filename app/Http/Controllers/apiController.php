@@ -707,15 +707,16 @@ class apiController extends Controller
 // Query bills by user and group by year/month
             $bills = DB::table('bills')
                 ->select(
-                    DB::raw("DATE_FORMAT(bill_date, '%Y') as year"),
-                    DB::raw("DATE_FORMAT(bill_date, '%m') as month"),
+                    DB::raw("YEAR(bill_date) as year"),
+                    DB::raw("MONTH(bill_date) as month"),
                     DB::raw("SUM(total_amount) as total"),
                     DB::raw("SUM(COALESCE(cgst, 0) + COALESCE(igst, 0)) as gst")
                 )
                 ->where('userid', $userid)
                 ->whereNotNull('bill_date')
-                ->groupBy(DB::raw("DATE_FORMAT(bill_date, '%Y')"), DB::raw("DATE_FORMAT(bill_date, '%m')"))
-                ->orderByDesc(DB::raw("DATE_FORMAT(bill_date, '%Y-%m')"))
+                ->groupBy(DB::raw("YEAR(bill_date)"), DB::raw("MONTH(bill_date)"))
+                ->orderByDesc('year')
+                ->orderByDesc('month')
                 ->get();
 
             if($bills->isEmpty()) {
