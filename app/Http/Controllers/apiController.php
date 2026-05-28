@@ -833,7 +833,7 @@ class apiController extends Controller
             $offer = (array) $offer;
 
             if (!empty($offer['image']) && Storage::disk('public')->exists($offer['image'])) {
-                $offer['image_url'] = Storage::disk('public')->url($offer['image']);
+                $offer['image_url'] = url('public/storage/' . ltrim($offer['image'], '/'));
             } else {
                 $offer['image_url'] = null;
             }
