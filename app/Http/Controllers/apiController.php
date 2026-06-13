@@ -48,7 +48,7 @@ class apiController extends Controller
             }else{
 
                 $data['message'] = 'Password is not correct';
-                $data['data'] = [];
+                $data['data'] = (object)[];
                 $data['status'] = 401;
 
             }
@@ -56,7 +56,7 @@ class apiController extends Controller
         }else{
 
             $data['message'] = $email ? 'Email not found' : 'Phone number not found';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 404;
         }
 
@@ -108,13 +108,13 @@ class apiController extends Controller
             }else{
 
                 $data['message'] = 'Data not saved';
-                $data['data'] = [];
+                $data['data'] = (object)[];
                 $data['status'] = 204;
             }
         }else{
 
             $data['message'] = 'Phone number is register already';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 204;
         }
 
@@ -143,7 +143,7 @@ class apiController extends Controller
         }else{
 
             $data['message'] = 'User not found';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 404;
         }
 
@@ -157,7 +157,7 @@ class apiController extends Controller
 
         if (!$userid) {
             $data['message'] = 'User ID is required';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -166,7 +166,7 @@ class apiController extends Controller
 
         if (!$mdata) {
             $data['message'] = 'User not found';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 404;
             return Response::json($data);
         }
@@ -192,13 +192,13 @@ class apiController extends Controller
         if($save){
 
             $data['message'] = 'Profile data updated successfully';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 200;
 
         }else{
 
             $data['message'] = 'Profile not updated';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 204;
         }
 
@@ -212,6 +212,7 @@ class apiController extends Controller
 
         if (!$userid) {
             $data['message'] = 'User ID is required';
+            $data['data'] = (object)[];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -281,12 +282,12 @@ class apiController extends Controller
         if($save){
 
                 $response['message'] = 'address saved successfully';
-                $response['data'] = [];
+                $response['data'] = (object)[];
                 $response['status'] = 200;
         }else{
 
                 $response['message'] = 'Opps address not saved';
-                $response['data'] = [];
+                $response['data'] = (object)[];
                 $response['status'] = 204;
 
         }
@@ -319,12 +320,12 @@ class apiController extends Controller
             if($save){
 
                 $response['message'] = 'address updated successfully';
-                $response['data'] = [];
+                $response['data'] = (object)[];
                 $response['status'] = 200;
             }else{
 
                 $response['message'] = 'Opps address not updated';
-                $response['data'] = [];
+                $response['data'] = (object)[];
                 $response['status'] = 204;
 
             }
@@ -332,7 +333,7 @@ class apiController extends Controller
         }else{
 
             $response['message'] = 'Opps address not updated';
-            $response['data'] = [];
+            $response['data'] = (object)[];
             $response['status'] = 204;
 
         }
@@ -523,9 +524,9 @@ class apiController extends Controller
     'credentials' => storage_path('spendit.json')
 ]);
 
-            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id');
+            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'spendit-document-scan');
             $location = env('DOCUMENT_AI_LOCATION', 'us');
-            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'your-processor-id');
+            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'b7b554e1c7bb3c21');
             $processorName = $client->processorName($projectId, $location, $processorId);
 
             // Create raw document
@@ -980,83 +981,104 @@ class apiController extends Controller
     public function generateMonthlyBillsPDF(Request $req){
 
         $userid = $req->input('userid');
-        $month = $req->input('month');
-        $year = $req->input('year');
+        $month = $req->input('month', null);
+        $year = $req->input('year', date('Y'));
 
-        if (!$userid || !$month || !$year) {
-            $data['message'] = 'User ID, month and year are required';
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
             $data['data'] = [];
             $data['status'] = 400;
             return Response::json($data);
         }
 
-        try {
-            // Query bills for the specific month and year
-            $bills = DB::table('bills')
-                ->where('userid', $userid)
-                ->whereRaw("YEAR(bill_date) = ?", [$year])
-                ->whereRaw("MONTH(bill_date) = ?", [$month])
-                ->orderBy('bill_date', 'desc')
-                ->get();
+        // If month is not provided or set to 'all', generate for all months from Jan until current month
+        if (is_null($month) || $month === 'all' || $month === 0) {
+            $endMonth = (int) date('m');
+            $months = range(1, $endMonth);
+        } else {
+            $months = [(int)$month];
+        }
 
-            if($bills->isEmpty()) {
-                $data['message'] = 'No bills found for this month';
+        $generated = [];
+        $skipped = [];
+
+        try {
+            foreach ($months as $m) {
+                // Query bills for the specific month and year
+                $bills = DB::table('bills')
+                    ->where('userid', $userid)
+                    ->whereRaw("YEAR(bill_date) = ?", [$year])
+                    ->whereRaw("MONTH(bill_date) = ?", [$m])
+                    ->orderBy('bill_date', 'desc')
+                    ->get();
+
+                if($bills->isEmpty()) {
+                    $skipped[] = $m;
+                    continue;
+                }
+
+                // Generate PDF filename
+                $fileName = 'bills_' . $userid . '_' . $year . '_' . str_pad($m, 2, '0', STR_PAD_LEFT) . '_' . uniqid() . '.pdf';
+                $filePath = 'monthly_bills_pdf/' . $fileName;
+
+                // Create PDF content as HTML
+                $htmlContent = $this->generateBillsPDFContent($bills, $year, $m);
+
+                // Convert HTML to PDF using DomPDF
+                $pdf = \PDF::loadHTML($htmlContent);
+                $pdfContent = $pdf->output();
+                
+                // Save PDF to storage
+                Storage::disk('public')->put($filePath, $pdfContent);
+
+                // Check if record already exists for this month/year
+                $existing = DB::table('monthly_bills_pdf')
+                    ->where('userid', $userid)
+                    ->where('month', $m)
+                    ->where('year', $year)
+                    ->first();
+
+                if($existing) {
+                    // Delete old PDF
+                    if (Storage::disk('public')->exists($existing->bills_pdf)) {
+                        Storage::disk('public')->delete($existing->bills_pdf);
+                    }
+                    // Update record
+                    DB::table('monthly_bills_pdf')
+                        ->where('id', $existing->id)
+                        ->update(['bills_pdf' => $filePath, 'updated_at' => now()]);
+                    $pdfId = $existing->id;
+                } else {
+                    // Insert new record
+                    $pdfId = DB::table('monthly_bills_pdf')->insertGetId([
+                        'userid' => $userid,
+                        'month' => $m,
+                        'year' => $year,
+                        'bills_pdf' => $filePath,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+
+                $generated[] = [
+                    'pdf_id' => $pdfId,
+                    'pdf_url' => url('storage/' . $filePath),
+                    'file_path' => $filePath,
+                    'month' => $m,
+                    'month_name' => \Carbon\Carbon::createFromFormat('Y-m-d', $year . '-' . str_pad($m, 2, '0', STR_PAD_LEFT) . '-01')->format('F'),
+                    'year' => $year
+                ];
+            }
+
+            if (empty($generated)) {
+                $data['message'] = 'No bills found for the requested months';
                 $data['data'] = [];
                 $data['status'] = 204;
                 return Response::json($data);
             }
 
-            // Generate PDF filename
-            $fileName = 'bills_' . $userid . '_' . $year . '_' . str_pad($month, 2, '0', STR_PAD_LEFT) . '_' . uniqid() . '.pdf';
-            $filePath = 'monthly_bills_pdf/' . $fileName;
-
-            // Create PDF content as HTML
-            $htmlContent = $this->generateBillsPDFContent($bills, $year, $month);
-
-            // Convert HTML to PDF using DomPDF
-            $pdf = \PDF::loadHTML($htmlContent);
-            $pdfContent = $pdf->output();
-            
-            // Save PDF to storage
-            Storage::disk('public')->put($filePath, $pdfContent);
-
-            // Check if record already exists for this month/year
-            $existing = DB::table('monthly_bills_pdf')
-                ->where('userid', $userid)
-                ->where('month', $month)
-                ->where('year', $year)
-                ->first();
-
-            if($existing) {
-                // Delete old PDF
-                if (Storage::disk('public')->exists($existing->bills_pdf)) {
-                    Storage::disk('public')->delete($existing->bills_pdf);
-                }
-                // Update record
-                DB::table('monthly_bills_pdf')
-                    ->where('id', $existing->id)
-                    ->update(['bills_pdf' => $filePath, 'updated_at' => now()]);
-                $pdfId = $existing->id;
-            } else {
-                // Insert new record
-                $pdfId = DB::table('monthly_bills_pdf')->insertGetId([
-                    'userid' => $userid,
-                    'month' => $month,
-                    'year' => $year,
-                    'bills_pdf' => $filePath,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-            }
-
-            $data['message'] = 'Monthly bills PDF generated successfully';
-            $data['data'] = [
-                'pdf_id' => $pdfId,
-                'pdf_url' => url('storage/' . $filePath),
-                'file_path' => $filePath,
-                'month' => $month,
-                'year' => $year
-            ];
+            $data['message'] = 'Monthly bills PDFs generated successfully';
+            $data['data'] = ['generated' => $generated, 'skipped_months' => $skipped];
             $data['status'] = 200;
 
         } catch (\Exception $e) {
