@@ -521,12 +521,13 @@ class apiController extends Controller
 
                     $client = new DocumentProcessorServiceClient([
     'credentials' => storage_path('spendit.json')
-]);
+		    ]);
 
-            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id');
+
+	     $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'spendit-document-scan');
             $location = env('DOCUMENT_AI_LOCATION', 'us');
-            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'your-processor-id');
-            $processorName = $client->processorName($projectId, $location, $processorId);
+            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'b7b554e1c7bb3c21');
+	    $processorName = $client->processorName($projectId, $location, $processorId);
 
             // Create raw document
             $rawDocument = new RawDocument();
