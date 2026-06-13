@@ -1072,7 +1072,7 @@ class apiController extends Controller
 
             if (empty($generated)) {
                 $data['message'] = 'No bills found for the requested months';
-                $data['data'] = [];
+                $data['data'] = (object)[];
                 $data['status'] = 204;
                 return Response::json($data);
             }
@@ -1083,7 +1083,7 @@ class apiController extends Controller
 
         } catch (\Exception $e) {
             $data['message'] = 'Error generating PDF: ' . $e->getMessage();
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 500;
         }
 
