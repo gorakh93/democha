@@ -42,6 +42,9 @@ Route::post('/saving-offers', [apiController::class,'saving_offer']);
 
 Route::post('/offerImgUpload', [apiController::class,'offerImageUpload']);
 
+Route::post('/gen-month-bill-pdf', [apiController::class, 'generateMonthlyBillsPDF']);
+Route::post('/get-month-bill-pdf-list', [apiController::class, 'getMonthlyBillsPDFList']);
+
 
 
 

@@ -556,82 +556,187 @@ class apiController extends Controller
             ];
             
             //print_r($document->getEntities());die;
-            // Extract data from entities
-            foreach ($document->getEntities() as $entity) {
+
+            $entities = $document->getEntities(); // This is a RepeatedField object
+
+            $invoice_no_arr = ['invoice_id', 'bill_number'];
+            $invoice_date_arr = ['invoice_date', 'date'];
+            $total_amt_arr = ['total_amount', 'total'];
+
+            $net_amt_arr = ['net_amount', 'subtotal', 'sub_total'];
+            $gst_no_arr = ['supplier_tax_id', 'gst_number', 'gst'];
+            $phone_arr = ['supplier_phone', 'phone', 'mobile'];
+
+            $order_no_arr = ['order', 'purchase_order'];
+            $cgst_arr = ['cgst', 'total_tax_amount'];
+            $igst_arr = ['igst', 'total_tax_amount'];
+
+            $merchant_arr = ['supplier_name', 'merchant_name'];
+             
+            $bill_number = $bill_date = $total_amount = $sub_total = 
+            $gstnumber = $phone = $order_number = $cgst = $igst = $merchant_name = '';
+
+            //print_r($entities);die;
+            
+            $invoiceData = [];
+            foreach ($entities as $entity) {
+                $invoiceData[$entity->getType()] = $entity->getMentionText();
+            }
+            
+            $txt = json_encode($invoiceData);
+
+             // Insert into bills logs table
+            $logid = DB::table('bills_logs')->insertGetId([
+                'userid' => $userid,
+                'entity_txt' => $txt
+            ]);
+
+            foreach ($entities as $entity) {
+
                 $type = strtolower($entity->getType());
-                $text = $entity->getMentionText();
 
-                //echo $type . ' => ' . $text . "\n";
-
-                if ($type == 'invoice_id' || strpos($type, 'bill_number') !== false) {
-                    $extracted['bill_number'] = $text;
-                } elseif ($type == 'invoice_date' || strpos($type, 'date') !== false) {
-                    $extracted['bill_date'] = $text;
-                } elseif ($type == 'total_amount' || $type == 'total') {
-                    $extracted['total_amount'] = $text;
-                } elseif ($type == 'net_amount' || strpos($type, 'subtotal') !== false || $type == 'sub_total') {
-                    $extracted['sub_total'] = $text;
-                } elseif ($type == 'supplier_tax_id' || strpos($type, 'gst') !== false) {
-                    $extracted['gstnumber'] = $text;
-                } elseif ($type == 'supplier_phone' || strpos($type, 'phone') !== false || strpos($type, 'mobile') !== false) {
-                    $extracted['phone'] = $text;
-                } elseif (strpos($type, 'order') !== false || $type == 'purchase_order') {
-                    $extracted['order_number'] = $text;
-                } elseif (strpos($type, 'cgst') !== false || strpos($type, 'total_tax_amount') !== false) {
-                    $extracted['cgst'] = $text;
-                } elseif (strpos($type, 'igst') !== false || strpos($type, 'total_tax_amount') !== false) {
-                    $extracted['igst'] = $text;
-                }elseif (strpos($type, 'supplier_name') !== false) {
-                    $extracted['merchant_name'] = $text;
+                if (in_array($type, $invoice_no_arr)) {
+                    $bill_number = $entity->getMentionText();
                 }
+
+                 if (in_array($type, $invoice_date_arr)) {
+                    $bill_date = $entity->getMentionText();
+                 }
+
+                    if (in_array($type, $total_amt_arr)) {
+                        $total_amount = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $net_amt_arr)) {
+                        $sub_total = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $gst_no_arr)) {
+                        $gstnumber = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $phone_arr)) {
+                        $phone = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $order_no_arr)) {
+                        $order_number = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $cgst_arr)) {
+                        $cgst = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $igst_arr)) {
+                        $igst = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $merchant_arr)) {
+                        $merchant_name = $entity->getMentionText();
+                     }
+
             }
 
+            // Extract data from entities
+            // foreach ($document->getEntities() as $entity) {
+            //     $type = strtolower($entity->getType());
+            //     $text = $entity->getMentionText();
+
+            //     if ($type == 'invoice_id' || strpos($type, 'bill_number') !== false) {
+            //         $extracted['bill_number'] = $text;
+            //     } elseif ($type == 'invoice_date' || strpos($type, 'date') !== false) {
+            //         $extracted['bill_date'] = $text;
+            //     } elseif ($type == 'total_amount' || $type == 'total') {
+            //         $extracted['total_amount'] = $text;
+            //     } elseif ($type == 'net_amount' || strpos($type, 'subtotal') !== false || $type == 'sub_total') {
+            //         $extracted['sub_total'] = $text;
+            //     } elseif ($type == 'supplier_tax_id' || strpos($type, 'gst') !== false) {
+            //         $extracted['gstnumber'] = $text;
+            //     } elseif ($type == 'supplier_phone' || strpos($type, 'phone') !== false || strpos($type, 'mobile') !== false) {
+            //         $extracted['phone'] = $text;
+            //     } elseif (strpos($type, 'order') !== false || $type == 'purchase_order') {
+            //         $extracted['order_number'] = $text;
+            //     } elseif (strpos($type, 'cgst') !== false || strpos($type, 'total_tax_amount') !== false) {
+            //         $extracted['cgst'] = $text;
+            //     } elseif (strpos($type, 'igst') !== false || strpos($type, 'total_tax_amount') !== false) {
+            //         $extracted['igst'] = $text;
+            //     }elseif (strpos($type, 'supplier_name') !== false) {
+            //         $extracted['merchant_name'] = $text;
+            //     }
+            // }
+
             // Clean phone number
-            if ($extracted['phone']) {
-                $extracted['phone'] = str_replace('+91', '', $extracted['phone']);
-                $extracted['phone'] = trim($extracted['phone']);
+            if ($phone) {
+                $phone = str_replace('+91', '', $phone);
+                $phone = trim($phone);
             }
 
             // Parse bill_date if present
             $billDate = null;
-            if ($extracted['bill_date']) {
+            if ($bill_date) {
                 try {
-                    $billDate = \Carbon\Carbon::parse($extracted['bill_date'])->format('Y-m-d');
+                    $billDate = \Carbon\Carbon::parse($bill_date)->format('Y-m-d');
                 } catch (\Exception $e) {
                     $billDate = null;
                 }
             }
 
+            // Determine processing status
+            $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
+
+            if ($gstnumber && !$this->isValidGST($gstnumber)) {
+                $isProcess = 1; // Mark as needs processing if GST number is invalid
+            }
+
             // Insert into bills table
             $billId = DB::table('bills')->insertGetId([
                 'userid' => $userid,
-                'gstnumber' => $extracted['gstnumber'],
-                'bill_number' => $extracted['bill_number'],
-                'cgst' => $extracted['cgst'] ? floatval($extracted['cgst']) : null,
-                'igst' => $extracted['igst'] ? floatval($extracted['igst']) : null,
-                'phone' => $extracted['phone'],
-                'merchant_name' => $extracted['merchant_name'],
+                'gstnumber' => $gstnumber,
+                'bill_number' => $bill_number,
+                'cgst' => $cgst ? floatval($cgst) : null,
+                'igst' => $igst ? floatval($igst) : null,
+                'phone' => $phone,
+                'merchant_name' => $merchant_name,
                 'bill_date' => $billDate,
-                'total_amount' => $extracted['total_amount'] ? floatval($extracted['total_amount']) : null,
-                'gross_amount' => $extracted['sub_total'] ? floatval($extracted['sub_total']) : null,
-                'order_number' => $extracted['order_number'],
+                'total_amount' => $total_amount ? floatval($total_amount) : null,
+                'gross_amount' => $sub_total ? floatval($sub_total) : null,
+                'order_number' => $order_number,
                 'bill_file' => $filePath,
+                'is_process' => $isProcess,
                 'created_at' => now()
             ]);
 
             return $billId;
 
         } catch (\Exception $e) {
-            // If extraction fails, still save with minimal data
-            $billId = DB::table('bills')->insertGetId([
-                'userid' => $userid,
-                'bill_file' => $filePath,
-                'created_at' => now()
-            ]);
 
-            return $billId;
+            print_r($e);die;
+            // If extraction fails, still save with minimal data
+            // $billId = DB::table('bills')->insertGetId([
+            //     'userid' => $userid,
+            //     'bill_file' => $filePath,
+            //     'is_process' => 1,
+            //     'created_at' => now()
+            // ]);
+
+            //return $billId;
+        }
+
+
+
+    }
+
+    public function isValidGST($gst) {
+       // Regex for GSTIN format
+        $pattern = "/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/";
+
+        if (preg_match($pattern, $gst)) {
+            return true;
+        } else {
+            return false;
         }
     }
+
 
     public function getGstNo(Request $req){
 
@@ -870,6 +975,238 @@ class apiController extends Controller
         $response['status'] = 200;
 
         return Response::json($response);
+    }
+
+    public function generateMonthlyBillsPDF(Request $req){
+
+        $userid = $req->input('userid');
+        $month = $req->input('month');
+        $year = $req->input('year');
+
+        if (!$userid || !$month || !$year) {
+            $data['message'] = 'User ID, month and year are required';
+            $data['data'] = [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            // Query bills for the specific month and year
+            $bills = DB::table('bills')
+                ->where('userid', $userid)
+                ->whereRaw("YEAR(bill_date) = ?", [$year])
+                ->whereRaw("MONTH(bill_date) = ?", [$month])
+                ->orderBy('bill_date', 'desc')
+                ->get();
+
+            if($bills->isEmpty()) {
+                $data['message'] = 'No bills found for this month';
+                $data['data'] = [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            // Generate PDF filename
+            $fileName = 'bills_' . $userid . '_' . $year . '_' . str_pad($month, 2, '0', STR_PAD_LEFT) . '_' . uniqid() . '.pdf';
+            $filePath = 'monthly_bills_pdf/' . $fileName;
+
+            // Create PDF content as HTML
+            $htmlContent = $this->generateBillsPDFContent($bills, $year, $month);
+
+            // Convert HTML to PDF using DomPDF
+            $pdf = \PDF::loadHTML($htmlContent);
+            $pdfContent = $pdf->output();
+            
+            // Save PDF to storage
+            Storage::disk('public')->put($filePath, $pdfContent);
+
+            // Check if record already exists for this month/year
+            $existing = DB::table('monthly_bills_pdf')
+                ->where('userid', $userid)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if($existing) {
+                // Delete old PDF
+                if (Storage::disk('public')->exists($existing->bills_pdf)) {
+                    Storage::disk('public')->delete($existing->bills_pdf);
+                }
+                // Update record
+                DB::table('monthly_bills_pdf')
+                    ->where('id', $existing->id)
+                    ->update(['bills_pdf' => $filePath, 'updated_at' => now()]);
+                $pdfId = $existing->id;
+            } else {
+                // Insert new record
+                $pdfId = DB::table('monthly_bills_pdf')->insertGetId([
+                    'userid' => $userid,
+                    'month' => $month,
+                    'year' => $year,
+                    'bills_pdf' => $filePath,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            $data['message'] = 'Monthly bills PDF generated successfully';
+            $data['data'] = [
+                'pdf_id' => $pdfId,
+                'pdf_url' => url('storage/' . $filePath),
+                'file_path' => $filePath,
+                'month' => $month,
+                'year' => $year
+            ];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error generating PDF: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+    private function generateBillsPDFContent($bills, $year, $month) {
+        $monthName = \Carbon\Carbon::createFromFormat('Y-m-d', "$year-$month-01")->format('F');
+        
+        $html = '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; }
+                h2 { color: #333; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { background-color: #007bff; color: white; padding: 10px; text-align: left; }
+                td { border: 1px solid #ddd; padding: 8px; }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                .total-row { background-color: #e9ecef; font-weight: bold; }
+                .header { margin-bottom: 10px; }
+                .currency { text-align: right; }
+            </style>
+        </head>
+        <body>
+            <h2>Monthly Bills Report</h2>
+            <div class="header">
+                <p><strong>Month:</strong> ' . $monthName . ', ' . $year . '</p>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bill Date</th>
+                        <th>Bill Number</th>
+                        <th>Merchant</th>
+                        <th class="currency">Amount</th>
+                        <th class="currency">CGST</th>
+                        <th class="currency">IGST</th>
+                        <th class="currency">Total</th>
+                    </tr>
+                </thead>
+                <tbody>';
+
+        $totalAmount = 0;
+        $totalCGST = 0;
+        $totalIGST = 0;
+        $totalGross = 0;
+
+        foreach ($bills as $bill) {
+            $billDate = isset($bill->bill_date) ? $bill->bill_date : 'N/A';
+            $billNumber = $bill->bill_number ?? 'N/A';
+            $merchant = $bill->merchant_name ?? 'N/A';
+            $amount = floatval($bill->total_amount ?? 0);
+            $cgst = floatval($bill->cgst ?? 0);
+            $igst = floatval($bill->igst ?? 0);
+            $gross = floatval($bill->gross_amount ?? 0);
+
+            $totalAmount += $amount;
+            $totalCGST += $cgst;
+            $totalIGST += $igst;
+            $totalGross += $gross;
+
+            $html .= '
+                    <tr>
+                        <td>' . $billDate . '</td>
+                        <td>' . $billNumber . '</td>
+                        <td>' . $merchant . '</td>
+                        <td class="currency">₹' . number_format($amount, 2) . '</td>
+                        <td class="currency">₹' . number_format($cgst, 2) . '</td>
+                        <td class="currency">₹' . number_format($igst, 2) . '</td>
+                        <td class="currency">₹' . number_format($gross, 2) . '</td>
+                    </tr>';
+        }
+
+        $html .= '
+                    <tr class="total-row">
+                        <td colspan="3">TOTAL</td>
+                        <td class="currency">₹' . number_format($totalAmount, 2) . '</td>
+                        <td class="currency">₹' . number_format($totalCGST, 2) . '</td>
+                        <td class="currency">₹' . number_format($totalIGST, 2) . '</td>
+                        <td class="currency">₹' . number_format($totalGross, 2) . '</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>';
+
+        return $html;
+    }
+
+    public function getMonthlyBillsPDFList(Request $req){
+
+        $userid = $req->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            // Get all monthly bill PDFs for the user
+            $pdfList = DB::table('monthly_bills_pdf')
+                ->where('userid', $userid)
+                ->orderByDesc('year')
+                ->orderByDesc('month')
+                ->get();
+
+            if($pdfList->isEmpty()) {
+                $data['message'] = 'No monthly bills PDFs found for this user';
+                $data['data'] = [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            $result = [];
+            foreach ($pdfList as $pdf) {
+                $monthName = \Carbon\Carbon::createFromFormat('Y-m-d', $pdf->year . '-' . str_pad($pdf->month, 2, '0', STR_PAD_LEFT) . '-01')->format('F');
+                
+                $result[] = [
+                    'id' => $pdf->id,
+                    'month' => $pdf->month,
+                    'month_name' => $monthName,
+                    'year' => $pdf->year,
+                    'pdf_url' => url('storage/' . $pdf->bills_pdf),
+                    'file_path' => $pdf->bills_pdf,
+                    'created_at' => $pdf->created_at,
+                    'updated_at' => $pdf->updated_at
+                ];
+            }
+
+            $data['message'] = 'Monthly bills PDFs retrieved successfully';
+            $data['data'] = $result;
+            $data['status'] = 200;
+            $data['base_url'] = url('/storage/');
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving PDFs: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
     }
 
 
