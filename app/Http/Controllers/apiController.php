@@ -29,7 +29,7 @@ class apiController extends Controller
 
         if (!$loginValue) {
             $data['message'] = 'Phone or email is required';
-            $data['data'] = [];
+            $data['data'] = (object) [];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -362,7 +362,7 @@ class apiController extends Controller
 
         if($bills->isEmpty()) {
             $data['message'] = 'No bills found for this user';
-            $data['data'] = [];
+            $data['data'] = (object) [];
             $data['status'] = 204;
             return Response::json($data);
         }
@@ -382,15 +382,26 @@ class apiController extends Controller
                     'month' => $dt->format('F'),
                     'year' => $dt->format('Y'),
                     'total' => 0,
+                    'total_gst' => 0,
                     'bills' => []
                 ];
             }
             $grouped[$key]['bills'][] = $bill;
 
+            $grouped[$key]['category'] = 'utilities';
+
             // Sum total_price for this group, fallback to amount or total
             if (isset($bill->total_amount)) {
                 $grouped[$key]['total'] += floatval($bill->total_amount);
             }
+
+            // Sum total_gst (cgst + sgst + igst) for this group
+            $cgst = isset($bill->cgst) ? floatval($bill->cgst) : 0;
+            $sgst = isset($bill->sgst) ? floatval($bill->sgst) : 0;
+            $igst = isset($bill->igst) ? floatval($bill->igst) : 0;
+            $grouped[$key]['total_gst'] += ($cgst + $sgst + $igst);
+
+            
         }
 
         // Keep descending order of keys
@@ -414,6 +425,7 @@ class apiController extends Controller
         $bill_number = $req->input('bill_number');
         $cgst = $req->input('cgst');
         $igst = $req->input('igst');
+        $sgst = $req->input('sgst');
         $phone = $req->input('phone');
         $email = $req->input('email');
         
@@ -437,6 +449,7 @@ class apiController extends Controller
                 'bill_number' => $bill_number,
                 'cgst' => $cgst,
                 'igst' => $igst,
+                'sgst' => $sgst,
                 'phone' => $phone,
                 'email' => $email,
                 'merchant_name' => $merchant_name,
@@ -571,11 +584,12 @@ class apiController extends Controller
             $order_no_arr = ['order', 'purchase_order'];
             $cgst_arr = ['cgst', 'total_tax_amount'];
             $igst_arr = ['igst', 'total_tax_amount'];
+            $sgst_arr = ['sgst', 'total_tax_amount'];
 
             $merchant_arr = ['supplier_name', 'merchant_name'];
              
             $bill_number = $bill_date = $total_amount = $sub_total = 
-            $gstnumber = $phone = $order_number = $cgst = $igst = $merchant_name = '';
+            $gstnumber = $phone = $order_number = $cgst = $igst = $sgst = $merchant_name = '';
 
             //print_r($entities);die;
             
@@ -630,6 +644,10 @@ class apiController extends Controller
 
                     if (in_array($type, $igst_arr)) {
                         $igst = $entity->getMentionText();
+                    }
+
+                    if (in_array($type, $sgst_arr)) {
+                        $sgst = $entity->getMentionText();
                     }
 
                     if (in_array($type, $merchant_arr)) {
@@ -696,6 +714,7 @@ class apiController extends Controller
                 'bill_number' => $bill_number,
                 'cgst' => $cgst ? floatval($cgst) : null,
                 'igst' => $igst ? floatval($igst) : null,
+                'sgst' => $sgst ? floatval($sgst) : null,
                 'phone' => $phone,
                 'merchant_name' => $merchant_name,
                 'bill_date' => $billDate,
@@ -797,8 +816,6 @@ class apiController extends Controller
         return Response::json($data);
     }
 
-
-
      public function HomePageGraphData(Request $req){
       
         $userid = $req->input('userid');
@@ -810,13 +827,13 @@ class apiController extends Controller
                 return Response::json($data);
             }
     
-// Query bills by user and group by year/month
+            // Query bills by user and group by year/month
             $bills = DB::table('bills')
                 ->select(
                     DB::raw("YEAR(bill_date) as year"),
                     DB::raw("MONTH(bill_date) as month"),
                     DB::raw("SUM(total_amount) as total"),
-                    DB::raw("SUM(COALESCE(cgst, 0) + COALESCE(igst, 0)) as gst")
+                    DB::raw("SUM(COALESCE(cgst, 0) + COALESCE(igst, 0) + COALESCE(sgst, 0)) as gst")
                 )
                 ->where('userid', $userid)
                 ->whereNotNull('bill_date')
@@ -827,7 +844,7 @@ class apiController extends Controller
 
             if($bills->isEmpty()) {
                 $data['message'] = 'No bills found for this user';
-                $data['data'] = [];
+                $data['data'] = (object)[];
                 $data['status'] = 204;
                 return Response::json($data);
             }
@@ -842,9 +859,69 @@ class apiController extends Controller
                     'gst' => floatval($bill->gst)
                 ];
             }
+
+            // Total spendings and GST for the current month
+            $currentYear = date('Y');
+            $currentMonth = date('m');
+            $currentTotals = DB::table('bills')
+                ->select(
+                    DB::raw('COALESCE(SUM(total_amount), 0) as total'),
+                    DB::raw('COALESCE(SUM(COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0)), 0) as gst'),
+                    DB::raw('COALESCE(SUM(COALESCE(cgst, 0)), 0) as cgst'),
+                    DB::raw('COALESCE(SUM(COALESCE(sgst, 0)), 0) as sgst'),
+                    DB::raw('COALESCE(SUM(COALESCE(igst, 0)), 0) as igst')
+                )
+                ->where('userid', $userid)
+                ->whereNotNull('bill_date')
+                ->whereRaw('YEAR(bill_date) = ?', [$currentYear])
+                ->whereRaw('MONTH(bill_date) = ?', [$currentMonth])
+                ->first();
+
+            $currentMonthTotals = [
+                'total_spendings' => floatval($currentTotals->total),
+                'total_gst' => floatval($currentTotals->gst),
+
+                'total_savings' => 319,
+                'year' => (int) $currentYear,
+                'month' => (int) $currentMonth,
+            ];
+
+
+             $gstComp = [
+                'cgst' => floatval($currentTotals->cgst),
+                'sgst' => floatval($currentTotals->sgst),
+                'igst' => floatval($currentTotals->igst)
+            ];
+
+            // calculate total amount and total GST categorized by merchant type
+            $merchantTypeTotals = DB::table('bills')
+                ->select(
+                    'merchant_type',
+                    DB::raw('COALESCE(SUM(total_amount), 0) as total_amount'),
+                    DB::raw('COALESCE(SUM(COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0)), 0) as total_gst')
+                )
+                ->where('userid', $userid)
+                ->whereNotNull('bill_date')
+                ->groupBy('merchant_type')
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'merchant_type' => $row->merchant_type,
+                        'total_amount' => floatval($row->total_amount),
+                        'total_gst' => floatval($row->total_gst),
+                    ];
+                })
+                ->toArray();
+
+            $result = [
+                'graph' => $graphData,
+                'current_month' => $currentMonthTotals,
+                'gst_components' => $gstComp,
+                'category_breakdown' => $merchantTypeTotals
+            ];
     
             $data['message'] = 'Graph data retrieved successfully';
-            $data['data'] = $graphData;
+            $data['data'] = $result;
             $data['status'] = 200;
             return Response::json($data);
      }
@@ -858,7 +935,7 @@ class apiController extends Controller
 
         if (!$userid || !$month || !$year) {
             $data['message'] = 'User ID, month and year are required';
-            $data['data'] = [];
+            $data['data'] = (object)[];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -878,7 +955,7 @@ class apiController extends Controller
 
         if(!$bills || ($bills->total === null && $bills->subtotal === null)) {
             $data['message'] = 'No bills found for this month';
-            $data['data'] = [];
+            $data['data'] = (object) [];
             $data['status'] = 204;
             return Response::json($data);
         }
@@ -931,7 +1008,7 @@ class apiController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'No active offers found.',
-                'data' => []
+                'data' => (object) []
             ], 204);
         }
 
@@ -986,7 +1063,7 @@ class apiController extends Controller
 
         if (!$userid) {
             $data['message'] = 'User ID is required';
-            $data['data'] = [];
+            $data['data'] = (object) [];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -1181,7 +1258,7 @@ class apiController extends Controller
 
         if (!$userid) {
             $data['message'] = 'User ID is required';
-            $data['data'] = [];
+            $data['data'] = (object) [];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -1196,7 +1273,7 @@ class apiController extends Controller
 
             if($pdfList->isEmpty()) {
                 $data['message'] = 'No monthly bills PDFs found for this user';
-                $data['data'] = [];
+                $data['data'] = (object) [];
                 $data['status'] = 204;
                 return Response::json($data);
             }
