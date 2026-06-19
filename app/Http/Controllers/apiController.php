@@ -136,6 +136,12 @@ class apiController extends Controller
                     unset($user->password);
                 }
 
+                foreach ($user as $key => $value) {
+                    if ($value === null) {
+                        $user->$key = '-';
+                    }
+                }
+
                 $data['message'] = 'data get successfully';
                 $data['data'] = $user;
                 $data['status'] = 200;
@@ -356,7 +362,7 @@ class apiController extends Controller
         // Query bills by user
         $bills = DB::table('bills')
             ->where('userid', $userid)
-            ->orderByDesc(DB::raw("CONCAT(YEAR(created_at), LPAD(MONTH(created_at), 2, '0'))"))
+            ->orderByDesc(DB::raw("CONCAT(YEAR(bill_date), LPAD(MONTH(bill_date), 2, '0'))"))
             ->orderByDesc('created_at')
             ->get();
 
@@ -370,9 +376,9 @@ class apiController extends Controller
         // Group by month-year from created_at or bill date column
         $grouped = [];
         foreach ($bills as $bill) {
-            $date = isset($bill->created_at) ? $bill->created_at : null;
+            $date = isset($bill->bill_date) ? $bill->bill_date : null;
             if (!$date) {
-                $date = now();
+                continue; // Skip if bill_date is not set
             }
             $dt = \Carbon\Carbon::parse($date);
             $key = $dt->format('Y-m');
@@ -386,7 +392,7 @@ class apiController extends Controller
                     'bills' => []
                 ];
             }
-            $grouped[$key]['bills'][] = $bill;
+            
 
             $grouped[$key]['category'] = 'utilities';
 
@@ -396,10 +402,19 @@ class apiController extends Controller
             }
 
             // Sum total_gst (cgst + sgst + igst) for this group
-            $cgst = isset($bill->cgst) ? floatval($bill->cgst) : 0;
-            $sgst = isset($bill->sgst) ? floatval($bill->sgst) : 0;
-            $igst = isset($bill->igst) ? floatval($bill->igst) : 0;
-            $grouped[$key]['total_gst'] += ($cgst + $sgst + $igst);
+            $cgst = $bill->cgst !== null ? floatval($bill->cgst) : 0;
+            $sgst = $bill->sgst !== null ? floatval($bill->sgst) : 0;
+            $igst = $bill->igst !== null ? floatval($bill->igst) : 0;
+
+            $bill->cgst = $cgst;
+            $bill->sgst = $sgst;
+            $bill->igst = $igst;
+
+            $gst = ($cgst + $sgst + $igst);
+            $bill->gst = $gst;
+
+            $grouped[$key]['bills'][] = $bill;
+            $grouped[$key]['total_gst'] += $gst;
 
             
         }
@@ -434,6 +449,10 @@ class apiController extends Controller
         $gross_amount = $req->input('gross_amount');
         $order_number = $req->input('order_number');
 
+        $cgst = ($cgst !== null && $cgst !== '') ? $cgst : 0;
+        $sgst = ($sgst !== null && $sgst !== '') ? $sgst : 0;
+        $igst = ($igst !== null && $igst !== '') ? $igst : 0;
+
         if (!$userid) {
             $data['message'] = 'User ID, amount and bill details are required';
             $data['data'] = [];
@@ -447,9 +466,9 @@ class apiController extends Controller
                 'userid' => $userid,
                 'gstnumber' => $gstnumber,
                 'bill_number' => $bill_number,
-                'cgst' => $cgst,
-                'igst' => $igst,
-                'sgst' => $sgst,
+                'cgst' => $cgst !== null && $cgst !== '' ? floatval($cgst) : 0,
+                'igst' => $igst !== null && $igst !== '' ? floatval($igst) : 0,
+                'sgst' => $sgst !== null && $sgst !== '' ? floatval($sgst) : 0,
                 'phone' => $phone,
                 'email' => $email,
                 'merchant_name' => $merchant_name,
@@ -707,8 +726,12 @@ class apiController extends Controller
                 $isProcess = 1; // Mark as needs processing if GST number is invalid
             }
 
+
+            $merchant_type = 'utilities';
+
             // Insert into bills table
             $billId = DB::table('bills')->insertGetId([
+                'merchant_type' => $merchant_type,
                 'userid' => $userid,
                 'gstnumber' => $gstnumber,
                 'bill_number' => $bill_number,
