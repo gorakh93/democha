@@ -140,6 +140,11 @@ class apiController extends Controller
                     if ($value === null) {
                         $user->$key = '-';
                     }
+
+                     if ($key == 'profilePic' && $value == null) {
+                        $user->$key = '';
+                    }
+
                 }
 
                 $data['message'] = 'data get successfully';
@@ -1035,7 +1040,7 @@ class apiController extends Controller
             ], 204);
         }
 
-        $result = [];
+        $offer_result = [];
         foreach ($offers as $offer) {
             $offer = (array) $offer;
 
@@ -1045,8 +1050,19 @@ class apiController extends Controller
                 $offer['image_url'] = null;
             }
 
-            $result[] = $offer;
+            $offer_result[] = $offer;
         }
+
+
+        $total_amount = DB::table('bills')
+            ->where('userid', $req->input('userid'))
+            ->sum('total_amount');
+
+
+        $result = [
+            'offers' => $offer_result,
+            'total_amount' => $total_amount
+        ];
 
         return response()->json([
             'success' => true,
