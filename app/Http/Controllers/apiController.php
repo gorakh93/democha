@@ -125,6 +125,23 @@ class apiController extends Controller
 
         $userid = $req->input('userid');
 
+
+
+         $billCount = DB::table('bills')->where('userid', $userid)->count();
+                $gstSum = DB::table('bills')
+                    ->where('userid', $userid)
+                    ->selectRaw('COALESCE(SUM(COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0)), 0) as gst')
+                    ->first();
+
+        $total_gst = $gstSum ? floatval($gstSum->gst) : 0;
+        
+        DB::table('users')
+                    ->where('id', $userid)
+                    ->update([
+                        'scan_bill' => $billCount,
+                        'tax_identified' => $total_gst,
+                    ]);
+
         //update status
 
         $check = DB::select("select * from users where id = '$userid' and status=1");
@@ -135,18 +152,7 @@ class apiController extends Controller
                 if (isset($user->password)) {
                     unset($user->password);
                 }
-
-                foreach ($user as $key => $value) {
-                    if ($value === null) {
-                        $user->$key = '-';
-                    }
-
-                     if ($key == 'profilePic' && $value == null) {
-                        $user->$key = '';
-                    }
-
-                }
-
+                
                 $data['message'] = 'data get successfully';
                 $data['data'] = $user;
                 $data['status'] = 200;
