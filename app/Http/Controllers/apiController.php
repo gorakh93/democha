@@ -152,7 +152,7 @@ class apiController extends Controller
                 if (isset($user->password)) {
                     unset($user->password);
                 }
-                
+
                 $data['message'] = 'data get successfully';
                 $data['data'] = $user;
                 $data['status'] = 200;
@@ -943,6 +943,7 @@ class apiController extends Controller
                         'merchant_type' => $row->merchant_type,
                         'total_amount' => floatval($row->total_amount),
                         'total_gst' => floatval($row->total_gst),
+                        'tax_amount' => floatval($row->total_gst),
                     ];
                 })
                 ->toArray();
