@@ -1040,7 +1040,7 @@ class apiController extends Controller
             ], 204);
         }
 
-        $offer_result = [];
+        $result = [];
         foreach ($offers as $offer) {
             $offer = (array) $offer;
 
@@ -1050,7 +1050,7 @@ class apiController extends Controller
                 $offer['image_url'] = null;
             }
 
-            $offer_result[] = $offer;
+            $result[] = $offer;
         }
 
 
@@ -1059,15 +1059,11 @@ class apiController extends Controller
             ->sum('total_amount');
 
 
-        $result = [
-            'offers' => $offer_result,
-            'total_amount' => $total_amount
-        ];
-
         return response()->json([
             'success' => true,
             'message' => 'Active offers retrieved successfully.',
-            'data' => $result
+            'data' => $result,
+            'total_amount' => $total_amount
         ], 200);
     }
     public function offerImageUpload(Request $req) {
