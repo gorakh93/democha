@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
+use DateTime;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
@@ -724,7 +725,10 @@ class apiController extends Controller
             $billDate = null;
             if ($bill_date) {
                 try {
-                    $billDate = \Carbon\Carbon::parse($bill_date)->format('Y-m-d');
+                $bill_date = DateTime::createFromFormat('d/m/y', $bill_date);
+                $billDate = $bill_date->format('Y-m-d'); 
+
+                    //$billDate = \Carbon\Carbon::parse($bill_date)->format('Y-m-d');
                 } catch (\Exception $e) {
                     $billDate = null;
                 }
@@ -739,7 +743,7 @@ class apiController extends Controller
 
 
             $merchant_type = 'utilities';
-
+            
             // Insert into bills table
             $billId = DB::table('bills')->insertGetId([
                 'merchant_type' => $merchant_type,
