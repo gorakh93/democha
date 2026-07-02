@@ -604,6 +604,9 @@ class apiController extends Controller
 
             $entities = $document->getEntities(); // This is a RepeatedField object
 
+
+            print_r($entities);die;
+
             $invoice_no_arr = ['invoice_id', 'bill_number'];
             $invoice_date_arr = ['invoice_date', 'date'];
             $total_amt_arr = ['total_amount', 'total'];
@@ -614,7 +617,7 @@ class apiController extends Controller
 
             $order_no_arr = ['order', 'purchase_order'];
             $cgst_arr = ['cgst', 'total_tax_amount'];
-            $igst_arr = ['igst', 'total_tax_amount'];
+            $igst_arr = ['igst'];
             $sgst_arr = ['sgst', 'total_tax_amount'];
 
             $merchant_arr = ['supplier_name', 'merchant_name'];
@@ -743,7 +746,7 @@ class apiController extends Controller
 
 
             $merchant_type = 'utilities';
-            
+
             // Insert into bills table
             $billId = DB::table('bills')->insertGetId([
                 'merchant_type' => $merchant_type,
@@ -1350,6 +1353,158 @@ class apiController extends Controller
             $data['data'] = [];
             $data['status'] = 500;
         }
+
+        return Response::json($data);
+    }
+    public function getCoins(Request $req){
+
+        $userid = $req->input('userid');
+
+        // Validate user
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $user = DB::table('users')->where('id', $userid)->first();
+        if (!$user) {
+            $data['message'] = 'User not found';
+            $data['data'] = [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        // Constants
+        $VISIBILITY_MULTIPLIER = 1.0;
+        $PROFIT_CONTROL_FACTOR = 0.3;
+        $DAILY_LIMIT = 500;
+        $MONTHLY_LIMIT = 5000;
+
+        // Get verified bills (is_process = 0)
+        $verifiedBills = DB::table('bills')
+            ->where('userid', $userid)
+            ->where('is_process', 0)
+            ->whereNotNull('bill_date')
+            ->get();
+
+        // Calculate verified bill count
+        $verifiedScanCount = count($verifiedBills);
+
+        // Calculate total verified GST
+        $totalVerifiedGST = 0;
+        foreach ($verifiedBills as $bill) {
+            $gst = ($bill->cgst ?? 0) + ($bill->sgst ?? 0) + ($bill->igst ?? 0);
+            $totalVerifiedGST += floatval($gst);
+        }
+
+        // Determine tier based on verified scan count
+        $tier = 'Bronze';
+        $tierMultiplier = 1.0;
+
+        if ($verifiedScanCount >= 200) {
+            $tier = 'Platinum';
+            $tierMultiplier = 1.5;
+        } elseif ($verifiedScanCount >= 50) {
+            // Check for 30-day streak requirement
+            $last30Days = \Carbon\Carbon::now()->subDays(30);
+            $billsIn30Days = DB::table('bills')
+                ->where('userid', $userid)
+                ->where('is_process', 0)
+                ->whereNotNull('bill_date')
+                ->where('bill_date', '>=', $last30Days)
+                ->count();
+
+            if ($billsIn30Days >= 50) {
+                $tier = 'Gold';
+                $tierMultiplier = 1.2;
+            }
+        } elseif ($verifiedScanCount >= 10) {
+            $tier = 'Silver';
+            $tierMultiplier = 1.1;
+        }
+
+        // Calculate coins: Verified GST × Profit Control Factor × 10 × Tier Multiplier
+        $calculatedCoins = intval($totalVerifiedGST * $PROFIT_CONTROL_FACTOR * 10 * $tierMultiplier);
+
+        // Get today's date and reset date if needed
+        $today = \Carbon\Carbon::today();
+        $currentMonth = \Carbon\Carbon::now()->format('Y-m');
+
+        // Initialize or reset daily counter
+        $dailyCoinResetDate = $user->daily_coin_reset_date ?? null;
+        if (!$dailyCoinResetDate || $dailyCoinResetDate != $today->toDateString()) {
+            // Reset daily counter
+            DB::table('users')
+                ->where('id', $userid)
+                ->update([
+                    'daily_coin_count' => 0,
+                    'daily_coin_reset_date' => $today->toDateString()
+                ]);
+            $dailyCoinCount = 0;
+        } else {
+            $dailyCoinCount = $user->daily_coin_count ?? 0;
+        }
+
+        // Initialize or reset monthly counter
+        $monthlyCoinResetDate = $user->monthly_coin_reset_date ?? null;
+        if (!$monthlyCoinResetDate || substr($monthlyCoinResetDate, 0, 7) != $currentMonth) {
+            // Reset monthly counter
+            DB::table('users')
+                ->where('id', $userid)
+                ->update([
+                    'monthly_coin_count' => 0,
+                    'monthly_coin_reset_date' => \Carbon\Carbon::now()->startOfMonth()->toDateString()
+                ]);
+            $monthlyCoinCount = 0;
+        } else {
+            $monthlyCoinCount = $user->monthly_coin_count ?? 0;
+        }
+
+        // Don't cap at daily limit, only track it
+        $coinsAfterDailyLimit = $calculatedCoins;
+
+        // Apply monthly limit
+        $coinsAfterMonthlyLimit = min($coinsAfterDailyLimit, $MONTHLY_LIMIT - $monthlyCoinCount);
+        $coinsAfterMonthlyLimit = max(0, $coinsAfterMonthlyLimit);
+
+        // Update user's coins and counters
+        $totalCoins = ($user->coins ?? 0) + $coinsAfterMonthlyLimit;
+        $newDailyCount = $dailyCoinCount + $coinsAfterMonthlyLimit;
+        $newMonthlyCount = $monthlyCoinCount + $coinsAfterMonthlyLimit;
+
+        DB::table('users')
+            ->where('id', $userid)
+            ->update([
+                'coins' => $totalCoins,
+                'daily_coin_count' => $newDailyCount,
+                'monthly_coin_count' => $newMonthlyCount,
+                'tier' => $tier,
+                'scan_bill' => $verifiedScanCount,
+                'tax_identified' => $totalVerifiedGST
+            ]);
+
+        // Prepare response
+        $data['message'] = 'Coins calculated successfully';
+        $data['data'] = [
+            'user_id' => $userid,
+            'verified_scans' => $verifiedScanCount,
+            'total_verified_gst' => floatval($totalVerifiedGST),
+            'tier' => $tier,
+            'tier_multiplier' => $tierMultiplier,
+            'calculated_coins' => $calculatedCoins,
+            'coins_after_daily_limit' => $coinsAfterDailyLimit,
+            'coins_earned_this_transaction' => $coinsAfterMonthlyLimit,
+            'total_coins' => $totalCoins,
+            'daily_coin_count' => $newDailyCount,
+            'daily_limit' => $DAILY_LIMIT,
+            'monthly_coin_count' => $newMonthlyCount,
+            'monthly_limit' => $MONTHLY_LIMIT,
+            'remaining_daily_coins' => max(0, $DAILY_LIMIT - $newDailyCount),
+            'remaining_monthly_coins' => max(0, $MONTHLY_LIMIT - $newMonthlyCount)
+        ];
+        $data['status'] = 200;
 
         return Response::json($data);
     }

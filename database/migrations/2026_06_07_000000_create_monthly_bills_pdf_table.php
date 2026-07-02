@@ -11,17 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('monthly_bills_pdf', function (Blueprint $table) {
-            $table->id();
-            $table->bigInteger('userid');
-            $table->unsignedTinyInteger('month');
-            $table->unsignedSmallInteger('year');
-            $table->string('bills_pdf');
-            $table->timestamps();
-            
-            $table->unique(['userid', 'month', 'year']);
-            $table->index('userid');
-        });
+        if (!Schema::hasTable('monthly_bills_pdf')) {
+            Schema::create('monthly_bills_pdf', function (Blueprint $table) {
+                $table->id();
+                $table->bigInteger('userid');
+                $table->unsignedTinyInteger('month');
+                $table->unsignedSmallInteger('year');
+                $table->string('bills_pdf');
+                $table->timestamps();
+                
+                $table->unique(['userid', 'month', 'year']);
+                $table->index('userid');
+            });
+        }
     }
 
     /**
