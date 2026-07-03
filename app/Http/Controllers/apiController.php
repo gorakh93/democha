@@ -126,9 +126,7 @@ class apiController extends Controller
 
         $userid = $req->input('userid');
 
-
-
-         $billCount = DB::table('bills')->where('userid', $userid)->count();
+        $billCount = DB::table('bills')->where('userid', $userid)->count();
                 $gstSum = DB::table('bills')
                     ->where('userid', $userid)
                     ->selectRaw('COALESCE(SUM(COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0)), 0) as gst')
@@ -147,9 +145,16 @@ class apiController extends Controller
 
         $check = DB::select("select * from users where id = '$userid' and status=1");
 
+       
+
         if(!empty($check)){
 
                 $user = $check[0];
+
+                if (isset($user->profilePic) && !empty($user->profilePic)) {
+                    $user->profilePic = url('storage/' . $user->profilePic);
+                }
+
                 if (isset($user->password)) {
                     unset($user->password);
                 }
@@ -204,6 +209,43 @@ class apiController extends Controller
         if ($req->has('password') && $req->input('password')) {
             $mdata->password = md5(trim($req->input('password')));
         }
+
+         if ($req->has('gstin') && $req->input('gstin')) {
+            $mdata->gstin = $req->input('gstin');
+        }
+
+         if ($req->has('bus_name') && $req->input('bus_name')) {
+            $mdata->bus_name = $req->input('bus_name');
+        }
+
+        if ($req->has('profile_image') && $req->input('profile_image')) {
+            $base64_str = $req->input('profile_image');
+
+            //decode base64 string
+
+             if($base64_str != ''){
+                $image = base64_decode($base64_str);
+
+                $imageName = uniqid().'.'.'png';
+                $resp = Storage::disk('public')->put('profile_pic/'.$imageName, $image);
+
+                $profilePic = 'profile_pic/'.$imageName;
+                $mdata->profilePic = $profilePic;
+            }
+        }
+        
+        //decode base64 string
+
+        //  if($base64_str != ''){
+        //     $image = base64_decode($base64_str);
+
+        //     $imageName = uniqid().'.'.'png';
+        //     $resp = Storage::disk('public')->put('profile_pic/'.$imageName, $image);
+
+        //     $profilePic = 'profile_pic/'.$imageName;
+            
+        //     User::where('id', $userid)->update(['profilePic' => $profilePic]);
+        // }
 
         $save = $mdata->save();
 
@@ -504,30 +546,7 @@ class apiController extends Controller
     }
 
 
-    public function profileImageUpload(Request $req) {
 
-        $base64_str = $req->input('imgstr');
-        $userid = $req->input('userid');
-
-        //decode base64 string
-
-         if($base64_str != ''){
-            $image = base64_decode($base64_str);
-
-            $imageName = uniqid().'.'.'png';
-            $resp = Storage::disk('public')->put('profile_pic/'.$imageName, $image);
-
-            $profilePic = 'profile_pic/'.$imageName;
-            
-            User::where('id', $userid)->update(['profilePic' => $profilePic]);
-        }
-
-        $response['message'] = 'image uploaded successfully';
-        $response['data'] = $profilePic;
-        $response['status'] = 200;
-
-        return Response::json($response);
-    }
 
     public function billFileUpload(Request $req) {
 
@@ -604,8 +623,6 @@ class apiController extends Controller
 
             $entities = $document->getEntities(); // This is a RepeatedField object
 
-
-            print_r($entities);die;
 
             $invoice_no_arr = ['invoice_id', 'bill_number'];
             $invoice_date_arr = ['invoice_date', 'date'];
@@ -1509,7 +1526,38 @@ class apiController extends Controller
         return Response::json($data);
     }
 
+    public function getVersion(Request $req){
 
-    
+        try {
+                // Get latest version
+                $version = DB::table('version')
+                    ->orderByDesc('id')
+                    ->first();
+                    
+                if (!$version) {
+                    $data['message'] = 'No version found';
+                    $data['data'] = (object)[];
+                    $data['status'] = 204;
+                    return Response::json($data);
+                }
+
+            $data['message'] = 'Version details retrieved successfully';
+            $data['data'] = [
+                'id' => $version->id,
+                'version' => $version->version,
+                'created_at' => $version->created_at,
+                'updated_at' => $version->updated_at
+            ];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving version: ' . $e->getMessage();
+            $data['data'] = (object)[];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
 
 }

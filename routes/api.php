@@ -47,4 +47,6 @@ Route::post('/get-month-bill-pdf-list', [apiController::class, 'getMonthlyBillsP
 
 Route::post('/get-coins', [apiController::class,'getCoins']);
 
+Route::post('/version', [apiController::class,'getVersion']);
+
 
