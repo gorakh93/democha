@@ -14,6 +14,7 @@ use App\Models\Address;
 use Google\Cloud\DocumentAI\V1\Client\DocumentProcessorServiceClient;
 use Google\Cloud\DocumentAI\V1\ProcessRequest;
 use Google\Cloud\DocumentAI\V1\RawDocument;
+use Illuminate\Support\Facades\File;
 
 
 class apiController extends Controller
@@ -227,6 +228,13 @@ class apiController extends Controller
                 $image = base64_decode($base64_str);
 
                 $imageName = uniqid().'.'.'png';
+
+                $path = storage_path('app/public/profile_pic');
+
+                if (!File::isDirectory($path)) {
+                    File::makeDirectory($path, 0775, true, true);
+                }
+
                 $resp = Storage::disk('public')->put('profile_pic/'.$imageName, $image);
 
                 $profilePic = 'profile_pic/'.$imageName;
