@@ -127,6 +127,8 @@ class apiController extends Controller
 
         $userid = $req->input('userid');
 
+        echo $userid;die;
+
         $billCount = DB::table('bills')->where('userid', $userid)->count();
                 $gstSum = DB::table('bills')
                     ->where('userid', $userid)
@@ -554,8 +556,6 @@ class apiController extends Controller
     }
 
 
-
-
     public function billFileUpload(Request $req) {
 
         $base64_str = $req->input('filestr');
@@ -572,12 +572,18 @@ class apiController extends Controller
             $bill_file = 'bill_files/'.$fileName;
 
             $billId = $this->getInvoiceInfo($userid, $bill_file);
+            
+            $response['message'] = 'file uploaded and bill data extracted successfully';
+            $response['data'] = ['bill_file' => $bill_file, 'bill_id' => $billId];
+            $response['status'] = 200;
+
+        }else{
+
+            $response['message'] = 'data from uploaded file not extracted';
+            $response['data'] = [];
+            $response['status'] = 204;
 
         }
-
-        $response['message'] = 'file uploaded and bill data extracted successfully';
-        $response['data'] = ['bill_file' => $bill_file, 'bill_id' => $billId];
-        $response['status'] = 200;
 
         return Response::json($response);
     }
@@ -749,19 +755,30 @@ class apiController extends Controller
                 $phone = trim($phone);
             }
 
-            // Parse bill_date if present
-            $billDate = null;
+        // Parse bill_date if present
+        $billDate = null;
+
+        $allowed_formats = ['d/m/Y', 'Y-m-d'];
+
+        foreach ($allowed_formats as $format) {
+            $parsed_date = DateTime::createFromFormat($format, $bill_date);
+
+            if ($parsed_date !== false) {
+                $bill_date = $parsed_date;
+                break;
+            }
+        }
+
             if ($bill_date) {
                 try {
-                $bill_date = DateTime::createFromFormat('d/m/y', $bill_date);
+                
                 $billDate = $bill_date->format('Y-m-d'); 
 
-                    //$billDate = \Carbon\Carbon::parse($bill_date)->format('Y-m-d');
                 } catch (\Exception $e) {
                     $billDate = null;
                 }
             }
-
+            
             // Determine processing status
             $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
 
