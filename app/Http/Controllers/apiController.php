@@ -127,8 +127,6 @@ class apiController extends Controller
 
         $userid = $req->input('userid');
 
-        echo $userid;die;
-
         $billCount = DB::table('bills')->where('userid', $userid)->count();
                 $gstSum = DB::table('bills')
                     ->where('userid', $userid)
