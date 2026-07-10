@@ -756,8 +756,14 @@ class apiController extends Controller
         // Parse bill_date if present
         $billDate = null;
 
-        $allowed_formats = ['d/m/Y', 'Y-m-d'];
+       // $allowed_formats = ['d/m/Y', 'Y-m-d','d-M-y'];
 
+        $allowed_formats = ['d/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y',
+            'd/m/y', 'd-m-y', 'm/d/y',
+            'd.m.Y', 'd.m.y', 'd m Y', 'Y.m.d',
+            'd-M-y', 'd-M-Y', 'd M Y', 'd F Y', 'd-F-Y',
+            'M d, Y', 'F d, Y', 'M d Y'];
+        //echo $bill_date;die;
         foreach ($allowed_formats as $format) {
             $parsed_date = DateTime::createFromFormat($format, $bill_date);
 
@@ -776,7 +782,7 @@ class apiController extends Controller
                     $billDate = null;
                 }
             }
-            
+           
             // Determine processing status
             $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
 
