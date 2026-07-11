@@ -650,9 +650,13 @@ class apiController extends Controller
             $sgst_arr = ['sgst', 'total_tax_amount'];
 
             $merchant_arr = ['supplier_name', 'merchant_name'];
+
+            $line_item_arr = ['line_item'];
+
+
              
             $bill_number = $bill_date = $total_amount = $sub_total = 
-            $gstnumber = $phone = $order_number = $cgst = $igst = $sgst = $merchant_name = '';
+            $gstnumber = $phone = $order_number = $cgst = $igst = $sgst = $merchant_name = $line_item = '';
 
             //print_r($entities);die;
             
@@ -717,6 +721,21 @@ class apiController extends Controller
                         $merchant_name = $entity->getMentionText();
                      }
 
+
+                     if (in_array($type, $line_item_arr)) {
+                        $line_item = $entity->getMentionText();
+                     }
+
+            }
+
+
+
+            if (str_contains($total_amount, ',')) {
+
+                $total_amount = str_replace([','], '', $total_amount);
+                $sub_total = str_replace([','], '', $sub_total);
+                $cgst = ($total_amount - $sub_total)/2;
+                $sgst = ($total_amount - $sub_total)/2;
             }
 
             // Extract data from entities
@@ -1586,6 +1605,115 @@ class apiController extends Controller
         }
 
         return Response::json($data);
+    }
+
+
+    public function test_bill_json(Request $req){
+
+        $id = $req->input('id');
+        
+        $check_all = DB::select("select * from bills_logs where id = '$id'");
+        $log_data = $check_all[0];
+
+        $json = $log_data->entity_txt;
+
+        $entities = json_decode($json, true);
+
+
+        $invoice_no_arr = ['invoice_id', 'bill_number'];
+        $invoice_date_arr = ['invoice_date', 'date'];
+        $total_amt_arr = ['total_amount', 'total'];
+
+        $net_amt_arr = ['net_amount', 'subtotal', 'sub_total'];
+        $gst_no_arr = ['supplier_tax_id', 'gst_number', 'gst'];
+        $phone_arr = ['supplier_phone', 'phone', 'mobile'];
+
+        $order_no_arr = ['order', 'purchase_order'];
+        $cgst_arr = ['cgst', 'total_tax_amount'];
+        $igst_arr = ['igst'];
+        $sgst_arr = ['sgst', 'total_tax_amount'];
+
+        $merchant_arr = ['supplier_name', 'merchant_name'];
+        $line_item_arr = ['line_item'];
+
+        $bill_number = $bill_date = $total_amount = $sub_total = 
+        $gstnumber = $phone = $order_number = $cgst = $igst = $sgst = $merchant_name = $line_item = '';
+
+            foreach ($entities as $key => $entity) {
+
+                if (in_array($key, $invoice_no_arr)) {
+                    $bill_number = $entity;
+                }
+
+                 if (in_array($key, $invoice_date_arr)) {
+                    $bill_date = $entity;
+                 }
+
+                    if (in_array($key, $total_amt_arr)) {
+                        $total_amount = $entity;
+                    }
+
+                    if (in_array($key, $net_amt_arr)) {
+                        $sub_total = $entity;
+                    }
+
+                    if (in_array($key, $gst_no_arr)) {
+                        $gstnumber = $entity;
+                    }
+
+                    if (in_array($key, $phone_arr)) {
+                        $phone = $entity;
+                    }
+
+                    if (in_array($key, $order_no_arr)) {
+                        $order_number = $entity;
+                    }
+
+                    if (in_array($key, $cgst_arr)) {
+                        $cgst = $entity;
+                    }
+
+                    if (in_array($key, $igst_arr)) {
+                        $igst = $entity;
+                    }
+
+                    if (in_array($key, $sgst_arr)) {
+                        $sgst = $entity;
+                    }
+
+                    if (in_array($key, $merchant_arr)) {
+                        $merchant_name = $entity;
+                     }
+
+
+                     if (in_array($key, $line_item_arr)) {
+                        $line_item = $entity;
+                     }
+
+            }
+
+
+        if (str_contains($total_amount, ',')) {
+
+            $total_amount = str_replace([','], '', $total_amount);
+            $sub_total = str_replace([','], '', $sub_total);
+            $cgst = ($total_amount - $sub_total)/2;
+            $sgst = ($total_amount - $sub_total)/2;
+            
+        }
+
+            echo $cgst;
+            echo $sgst;die;
+            echo "stop herre";die;
+
+
+            // if(($cgst == '') && ($sgst == '') && ($igst == '')) {
+        
+            //     $clean_amount = preg_replace('/[^\d.]/', '', $line_item);
+            //     $cgst = (float)$clean_amount;
+                
+            // }
+
     }
 
 

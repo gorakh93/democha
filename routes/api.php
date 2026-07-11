@@ -49,4 +49,6 @@ Route::post('/get-coins', [apiController::class,'getCoins']);
 
 Route::post('/version', [apiController::class,'getVersion']);
 
+Route::post('/test-bill-json', [apiController::class,'test_bill_json']);
+
 
