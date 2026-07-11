@@ -775,14 +775,13 @@ class apiController extends Controller
         // Parse bill_date if present
         $billDate = null;
 
-       // $allowed_formats = ['d/m/Y', 'Y-m-d','d-M-y'];
-
-        $allowed_formats = ['d/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y',
-            'd/m/y', 'd-m-y', 'm/d/y',
+        $allowed_formats = [
+            'd/m/y', 'd-m-y', 'm/d/y', // 2-digit years pehle check honge
+            'd/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y', // 4-digit years baad me
             'd.m.Y', 'd.m.y', 'd m Y', 'Y.m.d',
             'd-M-y', 'd-M-Y', 'd M Y', 'd F Y', 'd-F-Y',
             'M d, Y', 'F d, Y', 'M d Y'];
-        //echo $bill_date;die;
+            
         foreach ($allowed_formats as $format) {
             $parsed_date = DateTime::createFromFormat($format, $bill_date);
 
@@ -1451,27 +1450,45 @@ class apiController extends Controller
         $verifiedBills = DB::table('bills')
             ->where('userid', $userid)
             ->where('is_process', 0)
+            ->where('coins_paid', 0)
+            ->get();
+
+        $verifiedTotalBills = DB::table('bills')
+            ->where('userid', $userid)
+            ->where('is_process', 0)
             ->whereNotNull('bill_date')
             ->get();
 
         // Calculate verified bill count
-        $verifiedScanCount = count($verifiedBills);
+        $verifiedTotalScanCount = count($verifiedTotalBills);
 
         // Calculate total verified GST
         $totalVerifiedGST = 0;
         foreach ($verifiedBills as $bill) {
+            //echo    $bill->cgst . ' + ' . $bill->sgst . ' + ' . $bill->igst . ' = ';
             $gst = ($bill->cgst ?? 0) + ($bill->sgst ?? 0) + ($bill->igst ?? 0);
             $totalVerifiedGST += floatval($gst);
         }
 
-        // Determine tier based on verified scan count
+        //echo 'Total Verified GST: ' . $totalVerifiedGST . "\n";
+        //echo $verifiedTotalScanCount; die;
+
+
         $tier = 'Bronze';
         $tierMultiplier = 1.0;
 
-        if ($verifiedScanCount >= 200) {
+        if ($verifiedTotalScanCount >= 10) {
+            $tier = 'Silver';
+            $tierMultiplier = 1.1;
+        }
+
+        // Determine tier based on verified scan count
+       
+
+        if ($verifiedTotalScanCount >= 200) {
             $tier = 'Platinum';
             $tierMultiplier = 1.5;
-        } elseif ($verifiedScanCount >= 50) {
+        } elseif ($verifiedTotalScanCount >= 50) {
             // Check for 30-day streak requirement
             $last30Days = \Carbon\Carbon::now()->subDays(30);
             $billsIn30Days = DB::table('bills')
@@ -1485,13 +1502,14 @@ class apiController extends Controller
                 $tier = 'Gold';
                 $tierMultiplier = 1.2;
             }
-        } elseif ($verifiedScanCount >= 10) {
+        } elseif ($verifiedTotalScanCount >= 10) {
             $tier = 'Silver';
             $tierMultiplier = 1.1;
         }
 
         // Calculate coins: Verified GST × Profit Control Factor × 10 × Tier Multiplier
         $calculatedCoins = intval($totalVerifiedGST * $PROFIT_CONTROL_FACTOR * 10 * $tierMultiplier);
+
 
         // Get today's date and reset date if needed
         $today = \Carbon\Carbon::today();
@@ -1531,7 +1549,9 @@ class apiController extends Controller
         $coinsAfterDailyLimit = $calculatedCoins;
 
         // Apply monthly limit
-        $coinsAfterMonthlyLimit = min($coinsAfterDailyLimit, $MONTHLY_LIMIT - $monthlyCoinCount);
+        //$coinsAfterMonthlyLimit = min($coinsAfterDailyLimit, $MONTHLY_LIMIT - $monthlyCoinCount);
+
+        $coinsAfterMonthlyLimit = $coinsAfterDailyLimit;
         $coinsAfterMonthlyLimit = max(0, $coinsAfterMonthlyLimit);
 
         // Update user's coins and counters
@@ -1546,15 +1566,24 @@ class apiController extends Controller
                 'daily_coin_count' => $newDailyCount,
                 'monthly_coin_count' => $newMonthlyCount,
                 'tier' => $tier,
-                'scan_bill' => $verifiedScanCount,
+                'scan_bill' => $verifiedTotalScanCount,
                 'tax_identified' => $totalVerifiedGST
+            ]);
+
+
+        DB::table('bills')
+            ->where('userid', $userid)
+            ->where('is_process', 0)
+            ->where('coins_paid', 0)
+            ->update([
+                'coins_paid' => 1
             ]);
 
         // Prepare response
         $data['message'] = 'Coins calculated successfully';
         $data['data'] = [
             'user_id' => $userid,
-            'verified_scans' => $verifiedScanCount,
+            'verified_scans' => $verifiedTotalScanCount,
             'total_verified_gst' => floatval($totalVerifiedGST),
             'tier' => $tier,
             'tier_multiplier' => $tierMultiplier,
@@ -1702,8 +1731,60 @@ class apiController extends Controller
             
         }
 
-            echo $cgst;
-            echo $sgst;die;
+
+        echo $bill_date;
+        echo "gap herre"."\n";
+
+
+
+
+
+
+
+
+//   $allowed_formats = ['d/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y',
+//             'd/m/y', 'd-m-y', 'm/d/y',
+//             'd.m.Y', 'd.m.y', 'd m Y', 'Y.m.d',
+//             'd-M-y', 'd-M-Y', 'd M Y', 'd F Y', 'd-F-Y',
+//             'M d, Y', 'F d, Y', 'M d Y'];
+        //echo $bill_date;die;
+
+foreach ($allowed_formats as $format) {
+    // Yahan format ke sath '!' lagane se time 00:00:00 ho jata hai, current time nahi judta
+    $parsed_date = DateTime::createFromFormat('!' . $format, $bill_date);
+
+    if ($parsed_date !== false) {
+        $bill_date = $parsed_date;
+        break;
+    }
+}
+
+// Database me save karne ke liye string format me convert karein
+if ($bill_date instanceof DateTime) {
+    $final_db_date = $bill_date->format('Y-m-d');
+    echo $final_db_date; // Output: 2026-04-08
+} else {
+    echo "Invalid Date Format!";
+}
+
+echo "stop herre    ";die;
+
+
+
+      
+        foreach ($allowed_formats as $format) {
+            $parsed_date = DateTime::createFromFormat($format, $bill_date);
+
+            if ($parsed_date !== false) {
+                $bill_date = $parsed_date;
+                break;
+            }
+        }
+
+        print_r($bill_date);die;
+
+    
+          echo $bill_date;
             echo "stop herre";die;
 
 
