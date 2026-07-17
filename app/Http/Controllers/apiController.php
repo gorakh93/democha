@@ -430,7 +430,7 @@ class apiController extends Controller
 
         if($bills->isEmpty()) {
             $data['message'] = 'No bills found for this user';
-            $data['data'] = (object) [];
+            $data['data'] = [];
             $data['status'] = 204;
             return Response::json($data);
         }
@@ -1731,69 +1731,34 @@ class apiController extends Controller
             
         }
 
-
-        echo $bill_date;
-        echo "gap herre"."\n";
-
-
-
-
-
-
-
-
-//   $allowed_formats = ['d/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y',
-//             'd/m/y', 'd-m-y', 'm/d/y',
-//             'd.m.Y', 'd.m.y', 'd m Y', 'Y.m.d',
-//             'd-M-y', 'd-M-Y', 'd M Y', 'd F Y', 'd-F-Y',
-//             'M d, Y', 'F d, Y', 'M d Y'];
-        //echo $bill_date;die;
-
-foreach ($allowed_formats as $format) {
-    // Yahan format ke sath '!' lagane se time 00:00:00 ho jata hai, current time nahi judta
-    $parsed_date = DateTime::createFromFormat('!' . $format, $bill_date);
-
-    if ($parsed_date !== false) {
-        $bill_date = $parsed_date;
-        break;
     }
-}
 
-// Database me save karne ke liye string format me convert karein
-if ($bill_date instanceof DateTime) {
-    $final_db_date = $bill_date->format('Y-m-d');
-    echo $final_db_date; // Output: 2026-04-08
-} else {
-    echo "Invalid Date Format!";
-}
+    public function DeleteAccount(Request $req){
 
-echo "stop herre    ";die;
+        $userid = $req->input('userid');
+
+          try {
+            
+            DB::table('users')
+                    ->where('id', $userid)
+                    ->update([
+                        'status' => 0
+                    ]);
 
 
+            $data['message'] = 'Account details deleted successfully';
+            $data['data'] = [];
+            $data['status'] = 200;
 
-      
-        foreach ($allowed_formats as $format) {
-            $parsed_date = DateTime::createFromFormat($format, $bill_date);
-
-            if ($parsed_date !== false) {
-                $bill_date = $parsed_date;
-                break;
-            }
+        } catch (\Exception $e) {
+            $data['message'] = 'Error : ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 204;
         }
 
-        print_r($bill_date);die;
+        return Response::json($data);
 
-    
-          echo $bill_date;
-            echo "stop herre";die;
-
-
-            // if(($cgst == '') && ($sgst == '') && ($igst == '')) {
         
-            //     $clean_amount = preg_replace('/[^\d.]/', '', $line_item);
-            //     $cgst = (float)$clean_amount;
-                
-            // }
 
     }
 

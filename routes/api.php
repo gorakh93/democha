@@ -51,4 +51,8 @@ Route::post('/version', [apiController::class,'getVersion']);
 
 Route::post('/test-bill-json', [apiController::class,'test_bill_json']);
 
+Route::post('/delete-account', [apiController::class,'DeleteAccount']);
+
+
+
 
