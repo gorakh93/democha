@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\apiController;
 
 Route::get('/', function () {
     return view('privacy');
@@ -14,3 +15,5 @@ Route::get('/new', function () {
 Route::get('/privacy-policy', function () {
     return view('privacy');
 });
+
+Route::get('/spend/it/delete-account/{userid?}', [apiController::class,'DeleteAccount']);

@@ -1733,30 +1733,51 @@ class apiController extends Controller
 
     }
 
-    public function DeleteAccount(Request $req){
+    public function DeleteAccount($userid=false){
 
-        $userid = $req->input('userid');
-
-          try {
-            
-            DB::table('users')
-                    ->where('id', $userid)
-                    ->update([
-                        'status' => 0
-                    ]);
-
-
-            $data['message'] = 'Account details deleted successfully';
-            $data['data'] = [];
-            $data['status'] = 200;
-
-        } catch (\Exception $e) {
-            $data['message'] = 'Error : ' . $e->getMessage();
-            $data['data'] = [];
-            $data['status'] = 204;
+        if(!$userid){
+            $userid=false;
+            return view('app.delete_account',['userid'=>$userid]);
         }
 
-        return Response::json($data);
+        $check = DB::select("select * from users where id = '$userid' and status=1");
+
+        if(!empty($check)){
+
+            $user = User::find($userid);
+            $user->status = 0;
+            $save = $user->save();
+
+            return view('delete_account',['userid'=>$userid]);
+
+        }else{
+
+            $userid=false;
+            return view('delete_account',['userid'=>$userid]);
+
+        }
+
+
+        //   try {
+            
+        //     DB::table('users')
+        //             ->where('id', $userid)
+        //             ->update([
+        //                 'status' => 0
+        //             ]);
+
+
+        //     $data['message'] = 'Account details deleted successfully';
+        //     $data['data'] = [];
+        //     $data['status'] = 200;
+
+        // } catch (\Exception $e) {
+        //     $data['message'] = 'Error : ' . $e->getMessage();
+        //     $data['data'] = [];
+        //     $data['status'] = 204;
+        // }
+
+        // return Response::json($data);
 
         
 
