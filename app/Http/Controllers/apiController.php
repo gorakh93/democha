@@ -15,6 +15,7 @@ use Google\Cloud\DocumentAI\V1\Client\DocumentProcessorServiceClient;
 use Google\Cloud\DocumentAI\V1\ProcessRequest;
 use Google\Cloud\DocumentAI\V1\RawDocument;
 use Illuminate\Support\Facades\File;
+//ini_set('memory_limit', '2048M');
 
 
 class apiController extends Controller
