@@ -563,14 +563,20 @@ class apiController extends Controller
         //decode base64 string
 
          if($base64_str != ''){
-            $file = base64_decode($base64_str);
+
+
+          $file = base64_decode($base64_str);
 
             $fileName = uniqid().'.'.'pdf';
             $resp = Storage::disk('public')->put('bill_files/'.$fileName, $file);
 
             $bill_file = 'bill_files/'.$fileName;
 
-            $billId = $this->getInvoiceInfo($userid, $bill_file);
+            //through ai
+
+            $billId = $this->getInvoiceInfoAi($userid, $base64_str,$bill_file);
+
+            //$billId = $this->getInvoiceInfo($userid, $bill_file);
             
             $response['message'] = 'file uploaded and bill data extracted successfully';
             $response['data'] = ['bill_file' => $bill_file, 'bill_id' => $billId];
@@ -587,271 +593,118 @@ class apiController extends Controller
         return Response::json($response);
     }
 
-    public function getInvoiceInfo($userid,$filePath){
 
-        try {
-            // Get file content from storage
-            $content = Storage::disk('public')->get($filePath);
+    public function getInvoiceInfoAi($userid,$base64Data,$bill_file){
 
-            // Create client
-            //$client = new DocumentProcessorServiceClient();
+            $apiKey = config('services.gcp.api_key');
+            $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
+{
+  "merchant_type": "Type or category of the merchant (e.g., Retail, Restaurant, Service, Electronics, Utility)",
+  "bill_number": "Invoice ID or Bill Number",
+  "invoice_date": "Date of the invoice in YYYY-MM-DD format",
+  "total_amount": 0.00,
+  "sub_total": 0.00,
+  "gst": "GST NUMBER WHICH IS 15 DIGIT",
+  "phone": "Phone number or contact number of the merchant",
+  "order_number": "Order number, PO number, or Reference number if available",
+  "cgst": 0.00,
+  "sgst": 0.00,
+  "igst": 0.00,
+  "merchant_name": "Full name or business name of the merchant"
+}
 
-                    $client = new DocumentProcessorServiceClient([
-    'credentials' => storage_path('spendit.json')
-		    ]);
-
-
-            $projectId = env('GOOGLE_CLOUD_PROJECT_ID', 'spendit-document-scan');
-            $location = env('DOCUMENT_AI_LOCATION', 'us');
-            $processorId = env('DOCUMENT_AI_PROCESSOR_ID', 'b7b554e1c7bb3c21');
-            $processorName = $client->processorName($projectId, $location, $processorId);
-
-            // Create raw document
-            $rawDocument = new RawDocument();
-            $rawDocument->setContent($content);
-            $rawDocument->setMimeType('application/pdf');
-
-            // Create process request
-            $request = new ProcessRequest();
-            $request->setName($processorName);
-            $request->setRawDocument($rawDocument);
-
-            // Process the document
-            $response = $client->processDocument($request);
-            $document = $response->getDocument();
-
-            // Initialize extracted data
-            $extracted = [
-                'order_number' => null,
-                'phone' => null,
-                'gstnumber' => null,
-                'cgst' => null,
-                'igst' => null,
-                'bill_number' => null,
-                'sub_total' => null,
-                'total_amount' => null,
-                'bill_date' => null,
-            ];
-            
-            //print_r($document->getEntities());die;
-
-            $entities = $document->getEntities(); // This is a RepeatedField object
+Extraction Rules:
+1. Ensure numerical values (total_amount, sub_total, cgst, sgst, igst) are formatted as numbers/floats.
+2. If any tax component (CGST, SGST, IGST) is not applicable or not explicitly mentioned, return null for that key.
+3. Return ONLY valid JSON without markdown wrapping (no ```json code blocks) unless schema enforcement is configured.';
 
 
-            $invoice_no_arr = ['invoice_id', 'bill_number'];
-            $invoice_date_arr = ['invoice_date', 'date'];
-            $total_amt_arr = ['total_amount', 'total'];
+    $mimeType = 'application/pdf';
 
-            $net_amt_arr = ['net_amount', 'subtotal', 'sub_total'];
-            $gst_no_arr = ['supplier_tax_id', 'gst_number', 'gst'];
-            $phone_arr = ['supplier_phone', 'phone', 'mobile'];
+// Construct Gemini REST Payload
+    $payload = [
+    "contents" => [
+        [
+            "parts" => [
+                ["text" => $prompt],
+                [
+                    "inline_data" => [
+                        "mime_type" => $mimeType,
+                        "data" => $base64Data
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "generationConfig" => [
+        "response_mime_type" => "application/json" // Force structured JSON output
+    ]
+];
 
-            $order_no_arr = ['order', 'purchase_order'];
-            $cgst_arr = ['cgst', 'total_tax_amount'];
-            $igst_arr = ['igst'];
-            $sgst_arr = ['sgst', 'total_tax_amount'];
+$ch = curl_init("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" . $apiKey);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    CURLOPT_POSTFIELDS => json_encode($payload)
+]);
 
-            $merchant_arr = ['supplier_name', 'merchant_name'];
+$response = curl_exec($ch);
+curl_close($ch);
 
-            $line_item_arr = ['line_item'];
+// Step 1: Decode main API response
+$responseData = json_decode($response, true);
 
+// Step 2: Extract the 'text' property containing invoice details
+$rawInvoiceText = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? null;
 
-             
-            $bill_number = $bill_date = $total_amount = $sub_total = 
-            $gstnumber = $phone = $order_number = $cgst = $igst = $sgst = $merchant_name = $line_item = '';
+if ($rawInvoiceText) {
+    // Step 3: Clean markdown tags (if any exist like ```json ... ```)
+    $cleanJson = preg_replace('/```(?:json)?\s*|\s*```/', '', $rawInvoiceText);
 
-            //print_r($entities);die;
-            
-            $invoiceData = [];
-            foreach ($entities as $entity) {
-                $invoiceData[$entity->getType()] = $entity->getMentionText();
-            }
-            
-            $txt = json_encode($invoiceData);
-
-             // Insert into bills logs table
-            $logid = DB::table('bills_logs')->insertGetId([
-                'userid' => $userid,
-                'entity_txt' => $txt
-            ]);
-
-            foreach ($entities as $entity) {
-
-                $type = strtolower($entity->getType());
-
-                if (in_array($type, $invoice_no_arr)) {
-                    $bill_number = $entity->getMentionText();
-                }
-
-                 if (in_array($type, $invoice_date_arr)) {
-                    $bill_date = $entity->getMentionText();
-                 }
-
-                    if (in_array($type, $total_amt_arr)) {
-                        $total_amount = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $net_amt_arr)) {
-                        $sub_total = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $gst_no_arr)) {
-                        $gstnumber = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $phone_arr)) {
-                        $phone = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $order_no_arr)) {
-                        $order_number = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $cgst_arr)) {
-                        $cgst = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $igst_arr)) {
-                        $igst = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $sgst_arr)) {
-                        $sgst = $entity->getMentionText();
-                    }
-
-                    if (in_array($type, $merchant_arr)) {
-                        $merchant_name = $entity->getMentionText();
-                     }
+    // Step 4: Decode inner JSON string to PHP Associative Array
+    $invoiceData = json_decode(trim($cleanJson), true);
 
 
-                     if (in_array($type, $line_item_arr)) {
-                        $line_item = $entity->getMentionText();
-                     }
+$gstnumber = $invoiceData['gst'] ?? null;
+ $bill_number = $invoiceData['bill_number'] ?? null;
+ $billDate = $invoiceData['invoice_date'] ?? null;
 
-            }
-
-
-
-            if (str_contains($total_amount, ',')) {
-
-                $total_amount = str_replace([','], '', $total_amount);
-                $sub_total = str_replace([','], '', $sub_total);
-                $cgst = ($total_amount - $sub_total)/2;
-                $sgst = ($total_amount - $sub_total)/2;
-            }
-
-            // Extract data from entities
-            // foreach ($document->getEntities() as $entity) {
-            //     $type = strtolower($entity->getType());
-            //     $text = $entity->getMentionText();
-
-            //     if ($type == 'invoice_id' || strpos($type, 'bill_number') !== false) {
-            //         $extracted['bill_number'] = $text;
-            //     } elseif ($type == 'invoice_date' || strpos($type, 'date') !== false) {
-            //         $extracted['bill_date'] = $text;
-            //     } elseif ($type == 'total_amount' || $type == 'total') {
-            //         $extracted['total_amount'] = $text;
-            //     } elseif ($type == 'net_amount' || strpos($type, 'subtotal') !== false || $type == 'sub_total') {
-            //         $extracted['sub_total'] = $text;
-            //     } elseif ($type == 'supplier_tax_id' || strpos($type, 'gst') !== false) {
-            //         $extracted['gstnumber'] = $text;
-            //     } elseif ($type == 'supplier_phone' || strpos($type, 'phone') !== false || strpos($type, 'mobile') !== false) {
-            //         $extracted['phone'] = $text;
-            //     } elseif (strpos($type, 'order') !== false || $type == 'purchase_order') {
-            //         $extracted['order_number'] = $text;
-            //     } elseif (strpos($type, 'cgst') !== false || strpos($type, 'total_tax_amount') !== false) {
-            //         $extracted['cgst'] = $text;
-            //     } elseif (strpos($type, 'igst') !== false || strpos($type, 'total_tax_amount') !== false) {
-            //         $extracted['igst'] = $text;
-            //     }elseif (strpos($type, 'supplier_name') !== false) {
-            //         $extracted['merchant_name'] = $text;
-            //     }
-            // }
-
-            // Clean phone number
-            if ($phone) {
-                $phone = str_replace('+91', '', $phone);
-                $phone = trim($phone);
-            }
-
-        // Parse bill_date if present
-        $billDate = null;
-
-        $allowed_formats = [
-            'd/m/y', 'd-m-y', 'm/d/y', // 2-digit years pehle check honge
-            'd/m/Y', 'Y-m-d', 'd-m-Y', 'm/d/Y', // 4-digit years baad me
-            'd.m.Y', 'd.m.y', 'd m Y', 'Y.m.d',
-            'd-M-y', 'd-M-Y', 'd M Y', 'd F Y', 'd-F-Y',
-            'M d, Y', 'F d, Y', 'M d Y'];
-            
-        foreach ($allowed_formats as $format) {
-            $parsed_date = DateTime::createFromFormat($format, $bill_date);
-
-            if ($parsed_date !== false) {
-                $bill_date = $parsed_date;
-                break;
-            }
-        }
-
-            if ($bill_date) {
-                try {
-                
-                $billDate = $bill_date->format('Y-m-d'); 
-
-                } catch (\Exception $e) {
-                    $billDate = null;
-                }
-            }
-           
-            // Determine processing status
+ // Determine processing status
             $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
 
             if ($gstnumber && !$this->isValidGST($gstnumber)) {
                 $isProcess = 1; // Mark as needs processing if GST number is invalid
             }
 
-
-            $merchant_type = 'utilities';
-
-            // Insert into bills table
+      // Insert into bills table
             $billId = DB::table('bills')->insertGetId([
-                'merchant_type' => $merchant_type,
+                'merchant_type' => $invoiceData['merchant_type'] ?? null,
                 'userid' => $userid,
                 'gstnumber' => $gstnumber,
-                'bill_number' => $bill_number,
-                'cgst' => $cgst ? floatval($cgst) : null,
-                'igst' => $igst ? floatval($igst) : null,
-                'sgst' => $sgst ? floatval($sgst) : null,
-                'phone' => $phone,
-                'merchant_name' => $merchant_name,
-                'bill_date' => $billDate,
-                'total_amount' => $total_amount ? floatval($total_amount) : null,
-                'gross_amount' => $sub_total ? floatval($sub_total) : null,
-                'order_number' => $order_number,
-                'bill_file' => $filePath,
+                'bill_number' => $invoiceData['bill_number'] ?? null,
+                'cgst' => $invoiceData['cgst'] ?? null,
+                'igst' => $invoiceData['igst'] ?? null,
+                'sgst' => $invoiceData['sgst'] ?? null,
+                'phone' => $invoiceData['phone'] ?? null,
+                'merchant_name' => $invoiceData['merchant_name'] ?? null,
+                'bill_date' => $invoiceData['invoice_date'] ?? null,
+                'total_amount' => $invoiceData['total_amount'] ?? null,
+                'gross_amount' => $invoiceData['sub_total'] ?? null,
+                'order_number' => $invoiceData['order_number'] ?? null,
+                'bill_file' => $bill_file,
                 'is_process' => $isProcess,
                 'created_at' => now()
             ]);
 
             return $billId;
 
-        } catch (\Exception $e) {
-
-            print_r($e);die;
-            // If extraction fails, still save with minimal data
-            // $billId = DB::table('bills')->insertGetId([
-            //     'userid' => $userid,
-            //     'bill_file' => $filePath,
-            //     'is_process' => 1,
-            //     'created_at' => now()
-            // ]);
-
-            //return $billId;
-        }
-
+    }
 
 
     }
+
+    
 
     public function isValidGST($gst) {
        // Regex for GSTIN format
