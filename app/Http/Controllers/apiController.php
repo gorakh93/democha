@@ -563,14 +563,20 @@ class apiController extends Controller
         //decode base64 string
 
          if($base64_str != ''){
-            $file = base64_decode($base64_str);
+
+
+          $file = base64_decode($base64_str);
 
             $fileName = uniqid().'.'.'pdf';
             $resp = Storage::disk('public')->put('bill_files/'.$fileName, $file);
 
             $bill_file = 'bill_files/'.$fileName;
 
-            $billId = $this->getInvoiceInfo($userid, $bill_file);
+            //through ai
+
+            $billId = $this->getInvoiceInfoAi($userid, $base64_str,$bill_file);
+
+            //$billId = $this->getInvoiceInfo($userid, $bill_file);
             
             $response['message'] = 'file uploaded and bill data extracted successfully';
             $response['data'] = ['bill_file' => $bill_file, 'bill_id' => $billId];
@@ -585,6 +591,119 @@ class apiController extends Controller
         }
 
         return Response::json($response);
+    }
+
+
+    public function getInvoiceInfoAi($userid,$base64Data,$bill_file){
+
+            
+            $apiKey = 'AQ.Ab8RN6I49qouxnJMzwqX92Up7n6o5f8D5aeNU1D5SewF1A5WJA';
+            $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
+
+{
+  "merchant_type": "Type or category of the merchant (e.g., Retail, Restaurant, Service, Electronics, Utility)",
+  "bill_number": "Invoice ID or Bill Number",
+  "invoice_date": "Date of the invoice in YYYY-MM-DD format",
+  "total_amount": 0.00,
+  "sub_total": 0.00,
+  "gst": "GST NUMBER WHICH IS 15 DIGIT",
+  "phone": "Phone number or contact number of the merchant",
+  "order_number": "Order number, PO number, or Reference number if available",
+  "cgst": 0.00,
+  "sgst": 0.00,
+  "igst": 0.00,
+  "merchant_name": "Full name or business name of the merchant"
+}
+
+Extraction Rules:
+1. Ensure numerical values (total_amount, sub_total, cgst, sgst, igst) are formatted as numbers/floats.
+2. If any tax component (CGST, SGST, IGST) is not applicable or not explicitly mentioned, return null for that key.
+3. Return ONLY valid JSON without markdown wrapping (no ```json code blocks) unless schema enforcement is configured.';
+
+
+    $mimeType = 'application/pdf';
+
+// Construct Gemini REST Payload
+    $payload = [
+    "contents" => [
+        [
+            "parts" => [
+                ["text" => $prompt],
+                [
+                    "inline_data" => [
+                        "mime_type" => $mimeType,
+                        "data" => $base64Data
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "generationConfig" => [
+        "response_mime_type" => "application/json" // Force structured JSON output
+    ]
+];
+
+$ch = curl_init("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" . $apiKey);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    CURLOPT_POSTFIELDS => json_encode($payload)
+]);
+
+$response = curl_exec($ch);
+curl_close($ch);
+
+// Step 1: Decode main API response
+$responseData = json_decode($response, true);
+
+// Step 2: Extract the 'text' property containing invoice details
+$rawInvoiceText = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+if ($rawInvoiceText) {
+    // Step 3: Clean markdown tags (if any exist like ```json ... ```)
+    $cleanJson = preg_replace('/```(?:json)?\s*|\s*```/', '', $rawInvoiceText);
+
+    // Step 4: Decode inner JSON string to PHP Associative Array
+    $invoiceData = json_decode(trim($cleanJson), true);
+
+
+$gstnumber = $invoiceData['gst'] ?? null;
+ $bill_number = $invoiceData['bill_number'] ?? null;
+ $billDate = $invoiceData['invoice_date'] ?? null;
+
+ // Determine processing status
+            $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
+
+            if ($gstnumber && !$this->isValidGST($gstnumber)) {
+                $isProcess = 1; // Mark as needs processing if GST number is invalid
+            }
+
+      // Insert into bills table
+            $billId = DB::table('bills')->insertGetId([
+                'merchant_type' => $invoiceData['merchant_type'] ?? null,
+                'userid' => $userid,
+                'gstnumber' => $gstnumber,
+                'bill_number' => $invoiceData['bill_number'] ?? null,
+                'cgst' => $invoiceData['cgst'] ?? null,
+                'igst' => $invoiceData['igst'] ?? null,
+                'sgst' => $invoiceData['sgst'] ?? null,
+                'phone' => $invoiceData['phone'] ?? null,
+                'merchant_name' => $invoiceData['merchant_name'] ?? null,
+                'bill_date' => $invoiceData['invoice_date'] ?? null,
+                'total_amount' => $invoiceData['total_amount'] ?? null,
+                'gross_amount' => $invoiceData['sub_total'] ?? null,
+                'order_number' => $invoiceData['order_number'] ?? null,
+                'bill_file' => $bill_file,
+                'is_process' => $isProcess,
+                'created_at' => now()
+            ]);
+
+            return $billId;
+
+    }
+
+
     }
 
     public function getInvoiceInfo($userid,$filePath){
