@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'gcp' => [
+        'api_key' => env('GEMINIUS_API_KEY'),
+    ],
+
 ];
