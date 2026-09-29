@@ -596,7 +596,8 @@ class apiController extends Controller
 
     public function getInvoiceInfoAi($userid,$base64Data,$bill_file){
 
-            $apiKey = config('services.gcp.api_key');
+            //$apiKey = config('services.gcp.api_key');
+        $apiKey = env('GEMINIUS_API_KEY');
             $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
 {
   "merchant_type": "Type or category of the merchant (e.g., Retail, Restaurant, Service, Electronics, Utility)",
@@ -840,7 +841,6 @@ $gstnumber = $invoiceData['gst'] ?? null;
             $currentMonthTotals = [
                 'total_spendings' => floatval($currentTotals->total),
                 'total_gst' => floatval($currentTotals->gst),
-
                 'total_savings' => 319,
                 'year' => (int) $currentYear,
                 'month' => (int) $currentMonth,
@@ -874,11 +874,29 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 })
                 ->toArray();
 
+            $total_tax = 0;
+            $taxable = 0;
+
+            $userTotals = DB::table('bills')
+                ->select(
+                    DB::raw('COALESCE(SUM(COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0)), 0) as total_tax'),
+                    DB::raw('COALESCE(SUM(COALESCE(gross_amount, 0)), 0) as taxable')
+                )
+                ->where('userid', $userid)
+                ->first();
+
+            if ($userTotals) {
+                $total_tax = floatval($userTotals->total_tax);
+                $taxable = floatval($userTotals->taxable);
+            }
+
             $result = [
                 'graph' => $graphData,
                 'current_month' => $currentMonthTotals,
                 'gst_components' => $gstComp,
-                'category_breakdown' => $merchantTypeTotals
+                'category_breakdown' => $merchantTypeTotals,
+                'total_tax' => $total_tax,
+                'taxable' => $taxable
             ];
     
             $data['message'] = 'Graph data retrieved successfully';
