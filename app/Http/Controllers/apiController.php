@@ -595,8 +595,9 @@ class apiController extends Controller
 
 
     public function getInvoiceInfoAi($userid,$base64Data,$bill_file){
-        
-            $apiKey = config('services.gcp.api_key');
+
+            //$apiKey = config('services.gcp.api_key');
+        $apiKey = env('GEMINIUS_API_KEY');
             $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
 
 {
