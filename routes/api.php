@@ -53,6 +53,4 @@ Route::post('/test-bill-json', [apiController::class,'test_bill_json']);
 
 Route::post('/delete-account', [apiController::class,'DeleteAccount']);
 
-
-
-
+Route::post('/graph-data-detail', [apiController::class,'GraphDataDetail']);
