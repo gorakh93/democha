@@ -596,9 +596,8 @@ class apiController extends Controller
 
     public function getInvoiceInfoAi($userid,$base64Data,$bill_file){
 
-            //$apiKey = config('services.gcp.api_key');
-        $apiKey = env('GEMINIUS_API_KEY');
-            $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
+        $apiKey = config('services.gcp.api_key');
+        $prompt = 'Extract the following information from this PDF invoice and format the output strictly as a JSON object matching this schema:
 
 {
   "merchant_type": "Type or category of the merchant (e.g., Retail, Restaurant, Service, Electronics, Utility)",
@@ -642,6 +641,7 @@ Extraction Rules:
         "response_mime_type" => "application/json" // Force structured JSON output
     ]
 ];
+
 
 $ch = curl_init("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" . $apiKey);
 curl_setopt_array($ch, [
@@ -1656,6 +1656,50 @@ $gstnumber = $invoiceData['gst'] ?? null;
         
 
     }
+
+    public function GraphDataDetail(Request $request){
+
+        $userid = $request->input('userid');
+        $month = $request->input('month');
+        $year =$request->input('year');
+
+        if (!$userid || !$month || !$year) {
+            $data['message'] = 'User ID, month and year are required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $bills = DB::table('bills')
+            ->where('userid', $userid)
+            ->whereRaw('YEAR(bill_date) = ?', [$year])
+            ->whereRaw('MONTH(bill_date) = ?', [$month])
+            ->get();
+
+        if ($bills->isEmpty()) {
+            $data['message'] = 'No bills found for this month';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        foreach ($bills as $bill) {
+            if (!empty($bill->bill_file)) {
+                $bill->bill_file = url('/storage/' . ltrim($bill->bill_file, '/'));
+            }
+        }
+
+        $data['message'] = 'data get successfully';
+        $data['data'] = $bills;
+        $data['status'] = 200;
+
+        return Response::json($data);
+
+    }
+
+
+
+    
 
 
 }
