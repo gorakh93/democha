@@ -457,7 +457,7 @@ class apiController extends Controller
             }
             
 
-            $grouped[$key]['category'] = 'utilities';
+            $grouped[$key]['category'] = $bill->merchant_type ?? '';
 
             // Sum total_price for this group, fallback to amount or total
             if (isset($bill->total_amount)) {
@@ -475,6 +475,10 @@ class apiController extends Controller
 
             $gst = ($cgst + $sgst + $igst);
             $bill->gst = $gst;
+
+            if (!empty($bill->bill_file) && !filter_var($bill->bill_file, FILTER_VALIDATE_URL)) {
+                $bill->bill_file = url('/storage/' . ltrim($bill->bill_file, '/'));
+            }
 
             $grouped[$key]['bills'][] = $bill;
             $grouped[$key]['total_gst'] += $gst;
