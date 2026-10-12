@@ -580,6 +580,16 @@ class apiController extends Controller
 
             $billId = $this->getInvoiceInfoAi($userid, $base64_str,$bill_file);
 
+            if (is_array($billId) && !empty($billId['duplicate'])) {
+                Storage::disk('public')->delete($bill_file);
+
+                $response['message'] = 'Bill is already updated';
+                $response['data'] = ['bill_id' => $billId['bill_id']];
+                $response['status'] = 204;
+
+                return Response::json($response);
+            }
+
             //$billId = $this->getInvoiceInfo($userid, $bill_file);
             
             $response['message'] = 'file uploaded and bill data extracted successfully';
@@ -675,6 +685,20 @@ if ($rawInvoiceText) {
 $gstnumber = $invoiceData['gst'] ?? null;
  $bill_number = $invoiceData['bill_number'] ?? null;
  $billDate = $invoiceData['invoice_date'] ?? null;
+
+            if (!empty($bill_number)) {
+                $duplicateQuery = DB::table('bills')
+                    ->where('bill_number', trim($bill_number));
+
+                if (!empty($gstnumber)) {
+                    $duplicateQuery->where('gstnumber', trim($gstnumber));
+                }
+
+                $duplicateBill = $duplicateQuery->first();
+                if ($duplicateBill) {
+                    return ['duplicate' => true, 'bill_id' => $duplicateBill->id];
+                }
+            }
 
  // Determine processing status
             $isProcess = (is_null($gstnumber) || is_null($bill_number) || is_null($billDate)) ? 1 : 0;
