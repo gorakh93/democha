@@ -1712,6 +1712,10 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         foreach ($bills as $bill) {
+            $bill->gst = floatval($bill->cgst ?? 0)
+                + floatval($bill->igst ?? 0)
+                + floatval($bill->sgst ?? 0);
+
             if (!empty($bill->bill_file)) {
                 $bill->bill_file = url('/storage/' . ltrim($bill->bill_file, '/'));
             }
@@ -1723,6 +1727,64 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         return Response::json($data);
 
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $userid = $request->input('userid');
+        $oldPassword = $request->input('old_password');
+        $newPassword = $request->input('new_password');
+
+        if (!$userid || !$oldPassword || !$newPassword) {
+            $data['message'] = 'User ID, old password and new password are required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        if ($oldPassword === $newPassword) {
+            $data['message'] = 'New password must be different from old password';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $user = DB::table('users')->where('id', $userid)->first();
+
+            if (!$user) {
+                $data['message'] = 'User not found';
+                $data['data'] = (object) [];
+                $data['status'] = 404;
+                return Response::json($data);
+            }
+
+            if ($user->password !== md5($oldPassword)) {
+                $data['message'] = 'Old password is not correct';
+                $data['data'] = (object) [];
+                $data['status'] = 401;
+                return Response::json($data);
+            }
+
+            // Update the user's password
+            DB::table('users')
+                ->where('id', $userid)
+                ->update([
+                    'password' => md5($newPassword),
+                    'updated_at' => now()
+                ]);
+
+            $data['message'] = 'Password updated successfully';
+            $data['data'] = [];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error updating password: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
     }
 
 

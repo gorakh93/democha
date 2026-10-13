@@ -37,20 +37,14 @@ Route::post('/graph-data', [apiController::class,'HomePageGraphData']);
 Route::post('/bill-breakdown', [apiController::class,'BillBreakDown']);
 
 Route::post('/product-image', [apiController::class,'getProductImage']);
-
 Route::post('/saving-offers', [apiController::class,'saving_offer']);
-
 Route::post('/offerImgUpload', [apiController::class,'offerImageUpload']);
-
 Route::post('/gen-month-bill-pdf', [apiController::class, 'generateMonthlyBillsPDF']);
 Route::post('/get-month-bill-pdf-list', [apiController::class, 'getMonthlyBillsPDFList']);
-
 Route::post('/get-coins', [apiController::class,'getCoins']);
-
 Route::post('/version', [apiController::class,'getVersion']);
-
 Route::post('/test-bill-json', [apiController::class,'test_bill_json']);
-
 Route::post('/delete-account', [apiController::class,'DeleteAccount']);
-
 Route::post('/graph-data-detail', [apiController::class,'GraphDataDetail']);
+
+Route::post('/update-password', [apiController::class,'updatePassword']);
