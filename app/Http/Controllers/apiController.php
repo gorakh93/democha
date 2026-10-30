@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 use App\Models\User;
 use App\Models\Address;
@@ -81,9 +82,17 @@ class apiController extends Controller
 
         $email = $req->input('email');
 
-        $check = DB::select("select * from users where phone = '$phone' and status=1");
+        if ($email && User::where('email', $email)->exists()) {
+            $data['message'] = 'Email is registered already';
+            $data['data'] = (object)[];
+            $data['status'] = 204;
 
-        if(empty($check)){
+            return Response::json($data);
+        }
+
+        $check = User::where('phone', $phone)->where('status', 1)->exists();
+
+        if(!$check){
 
             //make user
 
@@ -93,7 +102,15 @@ class apiController extends Controller
 
             $user->email = $email;
 
-            $save = $user->save();
+            try {
+                $save = $user->save();
+            } catch (UniqueConstraintViolationException $exception) {
+                $data['message'] = 'Email or phone number is registered already';
+                $data['data'] = (object)[];
+                $data['status'] = 204;
+
+                return Response::json($data);
+            }
 
             $userid = $user->id;
 
