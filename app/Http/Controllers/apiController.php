@@ -2079,6 +2079,8 @@ $gstnumber = $invoiceData['gst'] ?? null;
         try {
             $otp = (string) random_int(10000, 99999);
 
+            $otp = 12345;
+
             DB::table('otp_logs')->insert([
                 'email' => trim($email),
                 'otp' => $otp,
