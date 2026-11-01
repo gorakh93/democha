@@ -936,13 +936,19 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 $taxable = floatval($userTotals->taxable);
             }
 
+            $user = DB::table('users')
+                ->where('id', $userid)
+                ->first(['m_budget', 'm_left']);
+
             $result = [
                 'graph' => $graphData,
                 'current_month' => $currentMonthTotals,
                 'gst_components' => $gstComp,
                 'category_breakdown' => $merchantTypeTotals,
                 'total_tax' => $total_tax,
-                'taxable' => $taxable
+                'taxable' => $taxable,
+                'monthly_budget' => $user && $user->m_budget !== null ? $user->m_budget : 0,
+                'left_month' => $user && $user->m_left !== null ? $user->m_left : 0
             ];
     
             $data['message'] = 'Graph data retrieved successfully';
@@ -1798,6 +1804,354 @@ $gstnumber = $invoiceData['gst'] ?? null;
         } catch (\Exception $e) {
             $data['message'] = 'Error updating password: ' . $e->getMessage();
             $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function addBills(Request $request)
+    {
+        $userid = $request->input('userid');
+        $billName = $request->input('bill_name');
+        $provider = $request->input('provider');
+        $amount = $request->input('amount');
+        $dueDate = $request->input('due_date');
+
+        if (!$userid || $billName === null || $billName === '' || $provider === null || $provider === '' || $amount === null || !$dueDate) {
+            $data['message'] = 'User ID, bill name, provider, amount and due date are required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $parsedDueDate = is_string($dueDate) ? DateTime::createFromFormat('!d-m-Y', $dueDate) : false;
+        if (!$parsedDueDate || $parsedDueDate->format('d-m-Y') !== $dueDate || !is_numeric($amount)) {
+            $data['message'] = 'Amount must be numeric and due date must use DD-MM-YYYY format';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            DB::table('mbills')->insert([
+                'userid' => $userid,
+                'bill_name' => $billName,
+                'provider' => $provider,
+                'amount' => $amount,
+                'due_date' => $parsedDueDate->format('Y-m-d'),
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            $data['message'] = 'Bills added successfully';
+            $data['data'] = [];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error adding bills: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function addManualBills(Request $request)
+    {
+        $userid = $request->input('userid');
+        $merchantName = $request->input('merchant_name');
+        $amount = $request->input('amount');
+        $gst = $request->input('gst');
+        $category = $request->input('merchant_type');
+        $billDate = $request->input('bill_date');
+
+       // print_r($request->all()); // Debugging line to print all request data
+        //die;
+
+        if (
+            !$userid ||
+            !is_string($merchantName) || trim($merchantName) === '' ||
+            $amount === null || $amount === '' || !is_numeric($amount) ||
+            $gst === null || $gst === '' || !is_numeric($gst) ||
+            !is_string($category) || trim($category) === '' ||
+            !is_string($billDate) || trim($billDate) === ''
+        ) {
+            $data['message'] = 'User ID, merchant name, numeric amount, numeric GST, category and bill date are required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $billDate = trim($billDate);
+        $parsedBillDate = false;
+        foreach (['!Y-m-d', '!d-m-Y'] as $dateFormat) {
+            $parsedBillDate = DateTime::createFromFormat($dateFormat, $billDate);
+            if ($parsedBillDate && $parsedBillDate->format(substr($dateFormat, 1)) === $billDate) {
+                break;
+            }
+            $parsedBillDate = false;
+        }
+
+        if (!$parsedBillDate) {
+            $data['message'] = 'Bill date must use YYYY-MM-DD or DD-MM-YYYY format';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $billId = DB::table('bills')->insertGetId([
+                'userid' => $userid,
+                'merchant_name' => trim($merchantName),
+                'total_amount' => $amount,
+                'gross_amount' => round((float) $amount - (float) $gst, 2),
+                'gstnumber' => trim($gst),
+                'merchant_type' => trim($category),
+                'bill_date' => $parsedBillDate->format('Y-m-d'),
+                'bill_number' => null,
+                'cgst' => 0,
+                'igst' => 0,
+                'sgst' => 0,
+                'phone' => null,
+                'email' => null,
+                'order_number' => null,
+                'bill_file' => null,
+                'created_at' => now()
+            ]);
+
+            $data['message'] = 'Bill added successfully';
+            $data['data'] = ['bill_id' => $billId];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error adding bill: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function recentActivity(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $activities = DB::table('bills')
+                ->where('userid', $userid)
+                ->orderByDesc('bill_date')
+                ->orderByDesc('created_at')
+                ->limit(3)
+                ->get(['merchant_type', 'bill_date', 'total_amount', 'created_at'])
+                ->map(function ($bill) {
+                    $activityDate = \Carbon\Carbon::parse($bill->bill_date ?? $bill->created_at);
+
+                    if ($activityDate->isToday()) {
+                        $date = 'today';
+                    } elseif ($activityDate->isYesterday()) {
+                        $date = 'yesterday';
+                    } else {
+                        $date = $activityDate->format('Y-m-d');
+                    }
+
+                    return [
+                        'merchant_type' => $bill->merchant_type,
+                        'date' => $date,
+                        'amount' => $bill->total_amount,
+                    ];
+                });
+
+            $data['message'] = $activities->isEmpty()
+                ? 'No recent activity found for this user'
+                : 'Recent activity retrieved successfully';
+            $data['data'] = $activities;
+            $data['status'] = $activities->isEmpty() ? 204 : 200;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving recent activity: ' . $e->getMessage();
+            $data['data'] = [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+    
+    public function upcomingBills(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $today = today();
+            $upcomingBills = DB::table('mbills')
+                ->where('userid', $userid)
+                ->whereNotNull('due_date')
+                ->get(['bill_name', 'due_date', 'repeats', 'amount'])
+                ->map(function ($bill) use ($today) {
+                    $dueDate = \Carbon\Carbon::parse($bill->due_date)->startOfDay();
+                    $nextDueDate = $dueDate->copy();
+
+                    if (strtolower(trim((string) $bill->repeats)) === 'monthly' && $dueDate->lt($today)) {
+                        $monthsToAdd = (($today->year - $dueDate->year) * 12)
+                            + ($today->month - $dueDate->month);
+                        $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd);
+
+                        if ($nextDueDate->lt($today)) {
+                            $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd + 1);
+                        }
+                    }
+
+                    return [
+                        'bill_name' => $bill->bill_name,
+                        'repeats' => $bill->repeats,
+                        'amount' => $bill->amount,
+                        'remaining_days' => $today->diffInDays($nextDueDate),
+                        '_next_due_date' => $nextDueDate,
+                    ];
+                })
+                ->filter(function ($bill) use ($today) {
+                    return $bill['_next_due_date']->gte($today);
+                })
+                ->sortBy('_next_due_date')
+                ->map(function ($bill) {
+                    unset($bill['_next_due_date']);
+                    return $bill;
+                });
+
+            if ($upcomingBills->isEmpty()) {
+                $data['message'] = 'No upcoming bills found for this user';
+                $data['data'] = (object) [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            $data['message'] = 'Upcoming bills retrieved successfully';
+            $data['data'] = $upcomingBills;
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving upcoming bills: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function forgetPassword(Request $request)
+    {
+        $email = $request->input('email');
+
+        if (!is_string($email) || trim($email) === '' || !filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
+            $data['message'] = 'A valid email address is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $user = User::where('email', trim($email))->first();
+
+        if (!$user) {
+            $data['message'] = 'Email not found';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        try {
+            $otp = (string) random_int(10000, 99999);
+
+            DB::table('otp_logs')->insert([
+                'email' => trim($email),
+                'otp' => $otp,
+                'created_at' => now('Asia/Kolkata'),
+            ]);
+
+            $data['message'] = 'OTP generated successfully';
+            $data['data'] = ['otp' => $otp];
+            $data['status'] = 200;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error generating OTP: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+    public function verifyOTP(Request $request)
+    {
+        $email = $request->input('email');
+        $otp = $request->input('otp');
+
+        if (!is_string($email) || trim($email) === '' || !filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
+            $data['message'] = 'A valid email address is required';
+            $data['data'] = ['matched' => false];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        if (
+            (!is_string($otp) && !is_int($otp)) ||
+            !preg_match('/^\d{5}$/', (string) $otp)
+        ) {
+            $data['message'] = 'A valid five-digit OTP is required';
+            $data['data'] = ['matched' => false];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $latestOtp = DB::table('otp_logs')
+                ->where('email', trim($email))
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->first(['otp', 'created_at']);
+
+            if (!$latestOtp) {
+                $data['message'] = 'OTP does not match or has expired';
+                $data['data'] = ['matched' => false];
+                $data['status'] = 401;
+                return Response::json($data);
+            }
+
+            $createdAt = \Carbon\Carbon::parse($latestOtp->created_at, 'Asia/Kolkata');
+            $now = now('Asia/Kolkata');
+            $isWithinFiveMinutes = !$createdAt->lt($now->copy()->subMinutes(5))
+                && !$createdAt->gt($now);
+            $isMatched = $isWithinFiveMinutes
+                && hash_equals((string) $latestOtp->otp, $otp);
+
+            $data['message'] = $isMatched
+                ? 'OTP matched'
+                : 'OTP does not match or has expired';
+            $data['data'] = ['matched' => $isMatched];
+            if ($isMatched) {
+                $data['data']['userid'] = User::where('email', trim($email))->value('id');
+            }
+            $data['status'] = $isMatched ? 200 : 401;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error verifying OTP: ' . $e->getMessage();
+            $data['data'] = ['matched' => false];
             $data['status'] = 500;
         }
 

@@ -48,3 +48,16 @@ Route::post('/delete-account', [apiController::class,'DeleteAccount']);
 Route::post('/graph-data-detail', [apiController::class,'GraphDataDetail']);
 
 Route::post('/update-password', [apiController::class,'updatePassword']);
+
+Route::post('/add-bills', [apiController::class,'addBills']);
+Route::post('/upcoming-bills', [apiController::class,'upcomingBills']);
+
+Route::post('/add-manual-bills', [apiController::class,'addManualBills']);
+
+Route::post('/recent-activity', [apiController::class,'recentActivity']);
+
+
+Route::post('/forget-password', [apiController::class,'forgetPassword']);
+Route::post('/verify-otp', [apiController::class,'verifyOTP']);
+
+
