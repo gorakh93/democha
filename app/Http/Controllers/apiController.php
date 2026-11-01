@@ -1841,8 +1841,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 'provider' => $provider,
                 'amount' => $amount,
                 'due_date' => $parsedDueDate->format('Y-m-d'),
-                'created_at' => now(),
-                'updated_at' => now()
+                'created_at' => now()
             ]);
 
             $data['message'] = 'Bills added successfully';
