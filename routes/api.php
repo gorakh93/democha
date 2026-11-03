@@ -59,5 +59,6 @@ Route::post('/recent-activity', [apiController::class,'recentActivity']);
 
 Route::post('/forget-password', [apiController::class,'forgetPassword']);
 Route::post('/verify-otp', [apiController::class,'verifyOTP']);
+Route::post('/repeats-master', [apiController::class,'repeatsMaster']);
 
 

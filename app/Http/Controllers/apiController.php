@@ -1985,75 +1985,6 @@ $gstnumber = $invoiceData['gst'] ?? null;
         return Response::json($data);
     }
 
-    
-    public function upcomingBills(Request $request)
-    {
-        $userid = $request->input('userid');
-
-        if (!$userid) {
-            $data['message'] = 'User ID is required';
-            $data['data'] = (object) [];
-            $data['status'] = 400;
-            return Response::json($data);
-        }
-
-        try {
-            $today = today();
-            $upcomingBills = DB::table('mbills')
-                ->where('userid', $userid)
-                ->whereNotNull('due_date')
-                ->get(['bill_name', 'due_date', 'repeats', 'amount'])
-                ->map(function ($bill) use ($today) {
-                    $dueDate = \Carbon\Carbon::parse($bill->due_date)->startOfDay();
-                    $nextDueDate = $dueDate->copy();
-
-                    if (strtolower(trim((string) $bill->repeats)) === 'monthly' && $dueDate->lt($today)) {
-                        $monthsToAdd = (($today->year - $dueDate->year) * 12)
-                            + ($today->month - $dueDate->month);
-                        $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd);
-
-                        if ($nextDueDate->lt($today)) {
-                            $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd + 1);
-                        }
-                    }
-
-                    return [
-                        'bill_name' => $bill->bill_name,
-                        'repeats' => $bill->repeats,
-                        'amount' => $bill->amount,
-                        'remaining_days' => $today->diffInDays($nextDueDate),
-                        '_next_due_date' => $nextDueDate,
-                    ];
-                })
-                ->filter(function ($bill) use ($today) {
-                    return $bill['_next_due_date']->gte($today);
-                })
-                ->sortBy('_next_due_date')
-                ->map(function ($bill) {
-                    unset($bill['_next_due_date']);
-                    return $bill;
-                });
-
-            if ($upcomingBills->isEmpty()) {
-                $data['message'] = 'No upcoming bills found for this user';
-                $data['data'] = (object) [];
-                $data['status'] = 204;
-                return Response::json($data);
-            }
-
-            $data['message'] = 'Upcoming bills retrieved successfully';
-            $data['data'] = $upcomingBills;
-            $data['status'] = 200;
-
-        } catch (\Exception $e) {
-            $data['message'] = 'Error retrieving upcoming bills: ' . $e->getMessage();
-            $data['data'] = (object) [];
-            $data['status'] = 500;
-        }
-
-        return Response::json($data);
-    }
-
 
     public function forgetPassword(Request $request)
     {
@@ -2157,6 +2088,107 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         return Response::json($data);
+    }
+
+
+      public function upcomingBills(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $today = today();
+            $upcomingBills = DB::table('mbills')
+                ->where('userid', $userid)
+                ->whereNotNull('due_date')
+                ->get(['bill_name', 'due_date', 'repeats', 'amount'])
+                ->map(function ($bill) use ($today) {
+                    $dueDate = \Carbon\Carbon::parse($bill->due_date)->startOfDay();
+                    $nextDueDate = $dueDate->copy();
+
+                    if (strtolower(trim((string) $bill->repeats)) === 'monthly' && $dueDate->lt($today)) {
+                        $monthsToAdd = (($today->year - $dueDate->year) * 12)
+                            + ($today->month - $dueDate->month);
+                        $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd);
+
+                        if ($nextDueDate->lt($today)) {
+                            $nextDueDate = $dueDate->copy()->addMonthsNoOverflow($monthsToAdd + 1);
+                        }
+                    }
+
+                    return [
+                        'bill_name' => $bill->bill_name,
+                        'repeats' => $bill->repeats,
+                        'amount' => $bill->amount,
+                        'remaining_days' => $today->diffInDays($nextDueDate),
+                        '_next_due_date' => $nextDueDate,
+                    ];
+                })
+                ->filter(function ($bill) use ($today) {
+                    return $bill['_next_due_date']->gte($today);
+                })
+                ->sortBy('_next_due_date')
+                ->map(function ($bill) {
+                    unset($bill['_next_due_date']);
+                    return $bill;
+                });
+
+            if ($upcomingBills->isEmpty()) {
+                $data['message'] = 'No upcoming bills found for this user';
+                $data['data'] = (object) [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            $data['message'] = 'Upcoming bills retrieved successfully';
+            $data['data'] = $upcomingBills;
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving upcoming bills: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
+
+    public function repeatsMaster(Request $request)
+    {
+
+        try {
+            $repeats = DB::table('repeats_master')
+                ->orderBy('id')
+                ->get(['id', 'name']);
+
+            if ($repeats->isEmpty()) {
+                $data['message'] = 'No repeats found';
+                $data['data'] = (object) [];
+                $data['status'] = 204;
+                return Response::json($data);
+            }
+
+            $data['message'] = 'Repeats retrieved successfully';
+            $data['data'] = $repeats;
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error retrieving repeats: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+
+
     }
 
 
