@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 use App\Models\User;
@@ -1998,7 +1999,6 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         $user = User::where('email', trim($email))->first();
-
         if (!$user) {
             $data['message'] = 'Email not found';
             $data['data'] = (object) [];
@@ -2009,7 +2009,12 @@ $gstnumber = $invoiceData['gst'] ?? null;
         try {
             $otp = (string) random_int(10000, 99999);
 
-            $otp = 12345;
+            $obj = new \stdClass();
+            $obj->email = trim($email);
+            $obj->otp = $otp;
+
+
+            $this->sendOtpMail($obj);
 
             DB::table('otp_logs')->insert([
                 'email' => trim($email),
@@ -2018,7 +2023,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
             ]);
 
             $data['message'] = 'OTP generated successfully';
-            $data['data'] = ['otp' => $otp];
+            $data['data'] = [];
             $data['status'] = 200;
         } catch (\Exception $e) {
             $data['message'] = 'Error generating OTP: ' . $e->getMessage();
@@ -2188,8 +2193,90 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         return Response::json($data);
 
-
     }
+
+    public function sendOtpMail(\stdClass $mailData): void
+    {
+
+        if (
+            !isset($mailData->email, $mailData->otp) ||
+            !is_string($mailData->email) ||
+            !filter_var(trim($mailData->email), FILTER_VALIDATE_EMAIL) ||
+            !preg_match('/^\d{5}$/', (string) $mailData->otp)
+        ) {
+            throw new \InvalidArgumentException('A valid email address and five-digit OTP are required');
+        }
+
+        $apiKey = config('services.resend.key');
+        if (!is_string($apiKey) || trim($apiKey) === '') {
+            throw new \RuntimeException('Resend API key is not configured');
+        }
+
+        $email = trim($mailData->email);
+        $otp = (string) $mailData->otp;
+        $response = Http::withToken($apiKey)
+            ->acceptJson()
+            ->timeout(15)
+            ->post('https://api.resend.com/emails', [
+                'from' => 'onboarding@resend.dev',
+                'to' => $email,
+                'subject' => 'Your OTP For Verification',
+                'html' => '<p>Your OTP is <strong>' . $otp . '</strong>.</p>',
+            ]);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Email service failed to send the OTP (HTTP ' . $response->status() . ')');
+        }
+    }
+
+    public function BeforeSignup(Request $request)
+    {
+        $email = $request->input('email');
+
+        if (!is_string($email) || trim($email) === '' || !filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
+            $data['message'] = 'A valid email address is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $email = trim($email);
+        if (User::where('email', $email)->exists()) {
+            $data['message'] = 'Email is already registered';
+            $data['data'] = (object) [];
+            $data['status'] = 409;
+            return Response::json($data, 409);
+        }
+
+        try {
+            $otp = (string) random_int(10000, 99999);
+
+            $obj = new \stdClass();
+            $obj->email = $email;
+            $obj->otp = $otp;
+
+
+            $this->sendOtpMail($obj);
+
+            DB::table('otp_logs')->insert([
+                'email' => $email,
+                'otp' => $otp,
+                'created_at' => now('Asia/Kolkata'),
+            ]);
+
+            $data['message'] = 'OTP generated successfully';
+            $data['data'] = [];
+            $data['status'] = 200;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error generating OTP: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+
+
 
 
 

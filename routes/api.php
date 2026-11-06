@@ -61,4 +61,10 @@ Route::post('/forget-password', [apiController::class,'forgetPassword']);
 Route::post('/verify-otp', [apiController::class,'verifyOTP']);
 Route::post('/repeats-master', [apiController::class,'repeatsMaster']);
 
+Route::post('/before-signup', [apiController::class,'BeforeSignup']);
+
+
+
+//Route::post('/send-otp-mail', [apiController::class,'sendOtpMail']);
+
 
