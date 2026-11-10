@@ -67,4 +67,3 @@ Route::post('/before-signup', [apiController::class,'BeforeSignup']);
 
 //Route::post('/send-otp-mail', [apiController::class,'sendOtpMail']);
 
-

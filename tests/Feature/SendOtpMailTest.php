@@ -13,16 +13,7 @@ class SendOtpMailTest extends TestCase
 {
     public function test_forget_password_sends_the_generated_otp_to_the_user_email(): void
     {
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-            $table->string('email')->unique();
-        });
-        Schema::create('otp_logs', function (Blueprint $table): void {
-            $table->id();
-            $table->string('email');
-            $table->string('otp');
-            $table->dateTime('created_at');
-        });
+        $this->createOtpTables();
 
         $email = 'user@example.com';
         DB::table('users')->insert(['email' => $email]);
@@ -48,5 +39,43 @@ class SendOtpMailTest extends TestCase
                 && $request['subject'] === 'Your OTP For Verification'
                 && str_contains($request['html'], $otp);
         });
+    }
+
+    public function test_forget_password_uses_the_fixed_otp_without_sending_email_when_testing_is_enabled(): void
+    {
+        $this->createOtpTables();
+        $email = 'user@example.com';
+        DB::table('users')->insert(['email' => $email]);
+        DB::table('testing')->insert(['otp' => 1]);
+        Http::fake();
+
+        $this->postJson('/api/forget-password', ['email' => $email])
+            ->assertOk()
+            ->assertJson([
+                'message' => 'OTP generated successfully',
+                'status' => 200,
+            ]);
+
+        $this->assertSame('12345', DB::table('otp_logs')->where('email', $email)->value('otp'));
+        Http::assertNothingSent();
+    }
+
+    private function createOtpTables(): void
+    {
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('email')->unique();
+        });
+        Schema::create('otp_logs', function (Blueprint $table): void {
+            $table->id();
+            $table->string('email');
+            $table->string('otp');
+            $table->dateTime('created_at');
+        });
+        Schema::create('testing', function (Blueprint $table): void {
+            $table->id();
+            $table->string('otp', 1);
+        });
+        DB::table('testing')->insert(['otp' => 0]);
     }
 }
