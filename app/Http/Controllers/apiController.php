@@ -239,6 +239,10 @@ class apiController extends Controller
             $mdata->bus_name = $req->input('bus_name');
         }
 
+        if ($req->has('monthly_budget') && $req->input('monthly_budget')) {
+            $mdata->m_budget = $req->input('monthly_budget');
+        }
+
         if ($req->has('profile_image') && $req->input('profile_image')) {
             $base64_str = $req->input('profile_image');
 
@@ -2189,11 +2193,11 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 ->filter(function ($bill) use ($today) {
                     return $bill['_next_due_date']->gte($today);
                 })
-                ->sortBy('_next_due_date')
                 ->map(function ($bill) {
                     unset($bill['_next_due_date']);
                     return $bill;
-                });
+                })
+                ->values();
 
             if ($upcomingBills->isEmpty()) {
                 $data['message'] = 'No upcoming bills found for this user';
@@ -2342,6 +2346,58 @@ $gstnumber = $invoiceData['gst'] ?? null;
             $data['status'] = 200;
         } catch (\Exception $e) {
             $data['message'] = 'Error generating OTP: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
+    
+    public function home(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $user = DB::table('users')->where('id', $userid)->first(['id', 'm_budget']);
+
+            if (!$user) {
+                $data['message'] = 'User not found';
+                $data['data'] = (object) [];
+                $data['status'] = 404;
+                return Response::json($data);
+            }
+
+            $monthStart = now()->startOfMonth()->toDateString();
+            $monthEnd = now()->endOfMonth()->toDateString();
+            $monthlyAmount = DB::table('bills')
+                ->where('userid', $userid)
+                ->whereBetween('bill_date', [$monthStart, $monthEnd])
+                ->sum('total_amount');
+
+            $monthlyBudget = (float) ($user->m_budget ?? 0);
+            $monthlyAmount = (float) $monthlyAmount;
+            $remainingBudget = round($monthlyBudget - $monthlyAmount, 2);
+
+            DB::table('users')
+                ->where('id', $userid)
+                ->update(['m_left' => $remainingBudget]);
+
+            $data['message'] = 'Monthly budget updated successfully';
+            $data['data'] = [
+                'monthly_budget' => $monthlyBudget,
+                'current_month_amount' => $monthlyAmount,
+                'm_left' => $remainingBudget,
+            ];
+            $data['status'] = 200;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error updating monthly budget: ' . $e->getMessage();
             $data['data'] = (object) [];
             $data['status'] = 500;
         }
