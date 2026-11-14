@@ -786,7 +786,10 @@ class apiController extends Controller
                     'updated_at' => $createdAt,
                 ]);
 
-            DB::table('bills')->where('id', $billid)->update(['coins_paid' => 1]);
+            DB::table('bills')->where('id', $billid)->update([
+                'coins' => $earnedCoins,
+                'coins_paid' => 1,
+            ]);
 
             return [
                 'status' => $earnedCoins > 0 ? 'EARNED' : 'NO_COINS',
@@ -2448,6 +2451,76 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         return Response::json($data);
     }
+
+
+
+    public function reports(Request $request)
+    {
+        $userid = filter_var($request->input('userid'), FILTER_VALIDATE_INT);
+        $monthInput = $request->input('month');
+        $month = null;
+        if ($monthInput !== null && !(is_string($monthInput) && trim($monthInput) === '')) {
+            $month = filter_var($monthInput, FILTER_VALIDATE_INT);
+        }
+        $year = filter_var($request->input('year'), FILTER_VALIDATE_INT);
+
+        if (
+            !$userid
+            || ($month !== null && ($month === false || $month < 1 || $month > 12))
+            || !$year
+            || $year < 1
+            || $year > 9999
+        ) {
+            $data['message'] = 'Valid user ID and year are required; month must be 1-12 when provided';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        if (!DB::table('users')->where('id', $userid)->exists()) {
+            $data['message'] = 'User not found';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        $rangeStart = $month === null
+            ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
+            : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+        $rangeEnd = $month === null
+            ? \Carbon\Carbon::create($year, 12, 1)->endOfYear()
+            : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+        $report = DB::table('bills')
+            ->where('userid', $userid)
+            ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+            ->selectRaw('
+                COALESCE(SUM(total_amount), 0) as total_spent,
+                COALESCE(SUM(COALESCE(gst, COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0))), 0) as total_gst,
+                COUNT(*) as total_transactions,
+                COALESCE(SUM(coins), 0) as total_coins_earned
+            ')
+            ->first();
+
+        $data['message'] = 'Report retrieved successfully';
+        $data['data'] = [
+            'userid' => $userid,
+            'year' => $year,
+            'total_spent' => round((float) ($report->total_spent ?? 0), 2),
+            'total_gst' => round((float) ($report->total_gst ?? 0), 2),
+            'total_transactions' => (int) ($report->total_transactions ?? 0),
+            'total_coins_earned' => (int) ($report->total_coins_earned ?? 0),
+        ];
+        if ($month !== null) {
+            $data['data']['month'] = $month;
+        }
+        $data['status'] = 200;
+
+        return Response::json($data);
+    }
+
+
+
+
     
     
 

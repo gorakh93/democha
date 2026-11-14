@@ -50,6 +50,7 @@ class CoinEarningTest extends TestCase
             $table->date('bill_date')->nullable();
             $table->integer('is_process')->default(0);
             $table->integer('coins_paid')->default(0);
+            $table->unsignedInteger('coins')->default(0);
         });
 
         Schema::create('coins', function (Blueprint $table): void {
@@ -90,6 +91,7 @@ class CoinEarningTest extends TestCase
         $this->assertSame(3.0, $earning['total_wallet']);
         $this->assertSame(30, (int) DB::table('users')->where('id', 1)->value('coins'));
         $this->assertSame(3.0, (float) DB::table('users')->where('id', 1)->value('wallet'));
+        $this->assertSame(30, (int) DB::table('bills')->where('id', $billId)->value('coins'));
         $this->assertSame(30, (int) DB::table('coins')->where('bill_id', $billId)->value('amount'));
         $this->assertSame(1, (int) DB::table('bills')->where('id', $billId)->value('coins_paid'));
 
@@ -132,6 +134,7 @@ class CoinEarningTest extends TestCase
 
         $this->assertSame(10, $earning['coins_earned']);
         $this->assertSame('USER_MONTHLY', $earning['cap_hit']);
+        $this->assertSame(10, (int) DB::table('bills')->where('id', $billId)->value('coins'));
         $this->assertSame(100, (int) DB::table('users')->where('id', 1)->value('coins'));
     }
 
