@@ -30,6 +30,7 @@ class CoinEarningTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->integer('coins')->default(0);
+            $table->decimal('wallet', 12, 2)->default(0);
             $table->integer('daily_coin_count')->default(0);
             $table->date('daily_coin_reset_date')->nullable();
             $table->integer('monthly_coin_count')->default(0);
@@ -85,7 +86,10 @@ class CoinEarningTest extends TestCase
         $this->assertSame('EARNED', $earning['status']);
         $this->assertSame(90, $earning['coins_computed']);
         $this->assertSame(30, $earning['coins_earned']);
+        $this->assertSame(3.0, $earning['rupees_earned']);
+        $this->assertSame(3.0, $earning['total_wallet']);
         $this->assertSame(30, (int) DB::table('users')->where('id', 1)->value('coins'));
+        $this->assertSame(3.0, (float) DB::table('users')->where('id', 1)->value('wallet'));
         $this->assertSame(30, (int) DB::table('coins')->where('bill_id', $billId)->value('amount'));
         $this->assertSame(1, (int) DB::table('bills')->where('id', $billId)->value('coins_paid'));
 
@@ -97,6 +101,22 @@ class CoinEarningTest extends TestCase
         $this->assertSame('ALREADY_PROCESSED', $secondAttempt['status']);
         $this->assertSame(1, DB::table('coins')->where('bill_id', $billId)->count());
         $this->assertSame(30, (int) DB::table('users')->where('id', 1)->value('coins'));
+        $this->assertSame(3.0, (float) DB::table('users')->where('id', 1)->value('wallet'));
+    }
+
+    public function test_it_converts_partial_coin_earnings_to_rupees(): void
+    {
+        $this->createUser(1);
+        $billId = $this->createBill(1, 15, 15);
+
+        $earning = app(apiController::class)->coins_count((object) [
+            'userid' => 1,
+            'billid' => $billId,
+        ]);
+
+        $this->assertSame(15, $earning['coins_earned']);
+        $this->assertSame(1.5, $earning['rupees_earned']);
+        $this->assertSame(1.5, (float) DB::table('users')->where('id', 1)->value('wallet'));
     }
 
     public function test_it_enforces_the_user_monthly_limit(): void
@@ -242,6 +262,26 @@ class CoinEarningTest extends TestCase
         $this->assertSame(0, DB::table('coins')->where('type', 'EARN')->count());
         $this->assertSame(0, (int) DB::table('bills')->sum('coins_paid'));
         $this->assertSame(30, (int) DB::table('users')->where('id', 1)->value('monthly_coin_count'));
+    }
+
+    public function test_wallet_returns_coins_and_wallet_including_zero_values(): void
+    {
+        $this->createUser(1);
+
+        $this->postJson('/api/wallet', ['userid' => 1])
+            ->assertOk()
+            ->assertJsonPath('data.coins', 0)
+            ->assertJsonPath('data.wallet', 0);
+
+        DB::table('users')->where('id', 1)->update([
+            'coins' => 25,
+            'wallet' => 12.50,
+        ]);
+
+        $this->postJson('/api/wallet', ['userid' => 1])
+            ->assertOk()
+            ->assertJsonPath('data.coins', 25)
+            ->assertJsonPath('data.wallet', 12.5);
     }
 
     private function createUser(int $id, int $coins = 0): void

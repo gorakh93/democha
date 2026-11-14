@@ -61,6 +61,7 @@ Route::post('/before-signup', [apiController::class,'BeforeSignup']);
 
 Route::post('/home', [apiController::class,'home']);
 Route::post('/upcoming-bills', [apiController::class,'upcomingBills']);
+Route::post('/wallet', [apiController::class,'wallet']);
 
 
 

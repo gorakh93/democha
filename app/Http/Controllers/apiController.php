@@ -679,6 +679,8 @@ class apiController extends Controller
                     'status' => 'ALREADY_PROCESSED',
                     'coins_earned' => 0,
                     'total_coins' => (int) ($user->coins ?? 0),
+                    'rupees_earned' => 0,
+                    'total_wallet' => (float) ($user->wallet ?? 0),
                 ];
             }
 
@@ -756,6 +758,9 @@ class apiController extends Controller
 
             $totalCoins = (int) ($user->coins ?? 0) + $earnedCoins;
             $monthlyCoinCount = $userMonthlyEarned + $earnedCoins;
+            $coinsPerRupee = max(1, (int) config('coins.redemption_coins_per_rupee'));
+            $rupeesEarned = round($earnedCoins / $coinsPerRupee, 2);
+            $totalWallet = round((float) ($user->wallet ?? 0) + $rupeesEarned, 2);
 
             DB::table('coins')->insert([
                 'userid' => (string) $userid,
@@ -769,6 +774,7 @@ class apiController extends Controller
 
             DB::table('users')->where('id', $userid)->update([
                 'coins' => $totalCoins,
+                'wallet' => $totalWallet,
                 'monthly_coin_count' => $monthlyCoinCount,
                 'monthly_coin_reset_date' => $monthStartValue,
             ]);
@@ -786,6 +792,8 @@ class apiController extends Controller
                 'status' => $earnedCoins > 0 ? 'EARNED' : 'NO_COINS',
                 'coins_computed' => $computedCoins,
                 'coins_earned' => $earnedCoins,
+                'rupees_earned' => $rupeesEarned,
+                'total_wallet' => $totalWallet,
                 'cap_hit' => $capHit,
                 'total_coins' => $totalCoins,
                 'monthly_coin_count' => $monthlyCoinCount,
@@ -860,6 +868,8 @@ curl_setopt_array($ch, [
 
 $response = curl_exec($ch);
 curl_close($ch);
+
+//print_r($response); die;// For debugging purposes, you can log or inspect the raw response
 
 
 // Step 1: Decode main API response
@@ -1956,18 +1966,20 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         try {
+            $gstAmount = (float) $gst;
+            $gstComponent = round($gstAmount / 2, 2);
             $billId = DB::table('bills')->insertGetId([
                 'userid' => $userid,
                 'merchant_name' => trim($merchantName),
                 'total_amount' => $amount,
-                'gross_amount' => round((float) $amount - (float) $gst, 2),
-                'gstnumber' => trim($gst),
+                'gross_amount' => round((float) $amount - $gstAmount, 2),
+                'gst' => $gstAmount,
                 'merchant_type' => trim($category),
                 'bill_date' => $parsedBillDate->format('Y-m-d'),
                 'bill_number' => null,
-                'cgst' => 0,
+                'cgst' => $gstComponent,
                 'igst' => 0,
-                'sgst' => 0,
+                'sgst' => $gstComponent,
                 'phone' => null,
                 'email' => null,
                 'order_number' => null,
@@ -2404,6 +2416,39 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         return Response::json($data);
     }
+
+    public function wallet(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $user = DB::table('users')
+            ->where('id', $userid)
+            ->first(['coins', 'wallet']);
+
+        if (!$user) {
+            $data['message'] = 'User not found';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        $data['message'] = 'Wallet retrieved successfully';
+        $data['data'] = [
+            'coins' => (int) ($user->coins ?? 0),
+            'wallet' => (float) ($user->wallet ?? 0),
+        ];
+        $data['status'] = 200;
+
+        return Response::json($data);
+    }
+    
     
 
 
