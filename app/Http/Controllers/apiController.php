@@ -2172,7 +2172,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         if (!$userid) {
             $data['message'] = 'User ID is required';
-            $data['data'] = (object) [];
+            $data['data'] = [];
             $data['status'] = 400;
             return Response::json($data);
         }
@@ -2216,7 +2216,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
             if ($upcomingBills->isEmpty()) {
                 $data['message'] = 'No upcoming bills found for this user';
-                $data['data'] = (object) [];
+                $data['data'] = [];
                 $data['status'] = 204;
                 return Response::json($data);
             }
@@ -2227,7 +2227,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
         } catch (\Exception $e) {
             $data['message'] = 'Error retrieving upcoming bills: ' . $e->getMessage();
-            $data['data'] = (object) [];
+            $data['data'] = [];
             $data['status'] = 500;
         }
 
@@ -2420,40 +2420,6 @@ $gstnumber = $invoiceData['gst'] ?? null;
         return Response::json($data);
     }
 
-    public function wallet(Request $request)
-    {
-        $userid = $request->input('userid');
-
-        if (!$userid) {
-            $data['message'] = 'User ID is required';
-            $data['data'] = (object) [];
-            $data['status'] = 400;
-            return Response::json($data);
-        }
-
-        $user = DB::table('users')
-            ->where('id', $userid)
-            ->first(['coins', 'wallet']);
-
-        if (!$user) {
-            $data['message'] = 'User not found';
-            $data['data'] = (object) [];
-            $data['status'] = 404;
-            return Response::json($data);
-        }
-
-        $data['message'] = 'Wallet retrieved successfully';
-        $data['data'] = [
-            'coins' => (int) ($user->coins ?? 0),
-            'wallet' => (float) ($user->wallet ?? 0),
-        ];
-        $data['status'] = 200;
-
-        return Response::json($data);
-    }
-
-
-
     public function reports(Request $request)
     {
         $userid = filter_var($request->input('userid'), FILTER_VALIDATE_INT);
@@ -2513,6 +2479,80 @@ $gstnumber = $invoiceData['gst'] ?? null;
         if ($month !== null) {
             $data['data']['month'] = $month;
         }
+        $data['status'] = 200;
+
+        return Response::json($data);
+    }
+
+    public function wallet(Request $request)
+    {
+        $userid = $request->input('userid');
+
+        if (!$userid) {
+            $data['message'] = 'User ID is required';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        $user = DB::table('users')
+            ->where('id', $userid)
+            ->first(['coins', 'wallet', 'pr_coins']);
+
+        if (!$user) {
+            $data['message'] = 'User not found';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        $coinsPerRupee = max(1, (int) config('coins.redemption_coins_per_rupee'));
+        $receipts = DB::table('bills')
+            ->where('userid', $userid)
+            ->orderByDesc('bill_date')
+            ->orderByDesc('id')
+            ->get(['merchant_name', 'bill_date', 'coins'])
+            ->map(function ($bill) use ($coinsPerRupee) {
+                $coins = (int) ($bill->coins ?? 0);
+                $reward = round($coins / $coinsPerRupee, 2);
+
+                return [
+                    'merchant_name' => $bill->merchant_name,
+                    'date' => $bill->bill_date
+                        ? \Carbon\Carbon::parse($bill->bill_date)->format('j F Y')
+                        : null,
+                    'coins' => $coins > 0 ? $coins : 'No Coins',
+                    'reward_value' => $reward > 0 ? $reward : 'No reward',
+                ];
+            })
+            ->all();
+
+        $coinsHistory = DB::table('coins')
+            ->where('userid', (string) $userid)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get(['bills_type', 'merchant_name', 'balance_after', 'created_at', 'coin'])
+            ->map(function ($entry) {
+                return [
+                    'bills_type' => $entry->bills_type,
+                    'merchant_name' => $entry->merchant_name,
+                    'balance' => $entry->balance_after,
+                    'date' => strtolower(\Carbon\Carbon::parse($entry->created_at)->format('j M Y')),
+                    'coin' => $entry->coin,
+                ];
+            })
+            ->all();
+
+        $data['message'] = 'Wallet retrieved successfully';
+        $data['data'] = [
+            'coins' => (int) ($user->coins ?? 0),
+            'wallet' => (float) ($user->wallet ?? 0),
+            'pr_coins' => $user->pr_coins,
+            'receipts' => $receipts,
+            'partner_rewards' => [],
+            'redemptions' => [],
+            'coins_history' => $coinsHistory,
+        ];
         $data['status'] = 200;
 
         return Response::json($data);

@@ -31,6 +31,7 @@ class CoinEarningTest extends TestCase
             $table->id();
             $table->integer('coins')->default(0);
             $table->decimal('wallet', 12, 2)->default(0);
+            $table->string('pr_coins')->nullable();
             $table->integer('daily_coin_count')->default(0);
             $table->date('daily_coin_reset_date')->nullable();
             $table->integer('monthly_coin_count')->default(0);
@@ -44,6 +45,7 @@ class CoinEarningTest extends TestCase
             $table->id();
             $table->integer('userid');
             $table->string('gstnumber')->nullable();
+            $table->string('merchant_name')->nullable();
             $table->decimal('cgst', 10, 2)->nullable();
             $table->decimal('sgst', 10, 2)->nullable();
             $table->decimal('igst', 10, 2)->nullable();
@@ -61,6 +63,8 @@ class CoinEarningTest extends TestCase
             $table->integer('amount')->nullable();
             $table->unsignedInteger('balance_after')->nullable();
             $table->string('type', 20)->nullable();
+            $table->string('bills_type', 150)->nullable();
+            $table->string('merchant_name', 150)->nullable();
             $table->dateTime('created_at');
             $table->dateTime('updated_at')->nullable();
             $table->index(['bill_id', 'type']);
@@ -267,24 +271,103 @@ class CoinEarningTest extends TestCase
         $this->assertSame(30, (int) DB::table('users')->where('id', 1)->value('monthly_coin_count'));
     }
 
-    public function test_wallet_returns_coins_and_wallet_including_zero_values(): void
+    public function test_wallet_returns_coins_wallet_and_pr_coins(): void
     {
         $this->createUser(1);
 
         $this->postJson('/api/wallet', ['userid' => 1])
             ->assertOk()
             ->assertJsonPath('data.coins', 0)
-            ->assertJsonPath('data.wallet', 0);
+            ->assertJsonPath('data.wallet', 0)
+            ->assertJsonPath('data.pr_coins', null)
+            ->assertJsonPath('data.receipts', [])
+            ->assertJsonPath('data.partner_rewards', [])
+            ->assertJsonPath('data.redemptions', [])
+            ->assertJsonPath('data.coins_history', []);
 
         DB::table('users')->where('id', 1)->update([
             'coins' => 25,
             'wallet' => 12.50,
+            'pr_coins' => '125',
+        ]);
+
+        DB::table('bills')->insert([
+            [
+                'userid' => 1,
+                'merchant_name' => 'Coffee Shop',
+                'bill_date' => '2026-05-05',
+                'coins' => 20,
+            ],
+            [
+                'userid' => 1,
+                'merchant_name' => 'Book Shop',
+                'bill_date' => '2026-04-04',
+                'coins' => 0,
+            ],
+        ]);
+
+        DB::table('coins')->insert([
+            [
+                'userid' => '1',
+                'bill_id' => '10',
+                'coin' => '20',
+                'amount' => 20,
+                'balance_after' => 20,
+                'type' => 'EARN',
+                'bills_type' => 'Bill',
+                'merchant_name' => 'Coffee Shop',
+                'created_at' => '2026-10-20 12:00:00',
+                'updated_at' => '2026-10-20 12:00:00',
+            ],
+            [
+                'userid' => '1',
+                'bill_id' => '11',
+                'coin' => '5',
+                'amount' => 5,
+                'balance_after' => 25,
+                'type' => 'EARN',
+                'bills_type' => 'Bill',
+                'merchant_name' => 'Book Shop',
+                'created_at' => '2026-10-19 12:00:00',
+                'updated_at' => '2026-10-19 12:00:00',
+            ],
         ]);
 
         $this->postJson('/api/wallet', ['userid' => 1])
             ->assertOk()
             ->assertJsonPath('data.coins', 25)
-            ->assertJsonPath('data.wallet', 12.5);
+            ->assertJsonPath('data.wallet', 12.5)
+            ->assertJsonPath('data.pr_coins', '125')
+            ->assertJsonPath('data.receipts', [
+                [
+                    'merchant_name' => 'Coffee Shop',
+                    'date' => '5 May 2026',
+                    'coins' => 20,
+                    'reward_value' => 2,
+                ],
+                [
+                    'merchant_name' => 'Book Shop',
+                    'date' => '4 April 2026',
+                    'coins' => 'No Coins',
+                    'reward_value' => 'No reward',
+                ],
+            ])
+            ->assertJsonPath('data.coins_history', [
+                [
+                    'bills_type' => 'Bill',
+                    'merchant_name' => 'Coffee Shop',
+                    'balance' => 20,
+                    'date' => '20 oct 2026',
+                    'coin' => '20',
+                ],
+                [
+                    'bills_type' => 'Bill',
+                    'merchant_name' => 'Book Shop',
+                    'balance' => 25,
+                    'date' => '19 oct 2026',
+                    'coin' => '5',
+                ],
+            ]);
     }
 
     private function createUser(int $id, int $coins = 0): void

@@ -63,4 +63,14 @@ class UpcomingBillsTest extends TestCase
         $this->assertSame([0, 1, 2], array_keys($bills));
         $this->assertSame(['Internet Recharge', 'Dth', 'Dish'], array_column($bills, 'bill_name'));
     }
+
+    public function test_it_returns_an_empty_array_when_no_upcoming_bills_exist(): void
+    {
+        $response = $this->postJson('/api/upcoming-bills', ['userid' => '25']);
+
+        $response->assertOk()
+            ->assertJsonPath('data', [])
+            ->assertJsonPath('status', 204);
+        $this->assertIsArray($response->json('data'));
+    }
 }
