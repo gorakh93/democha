@@ -2420,70 +2420,6 @@ $gstnumber = $invoiceData['gst'] ?? null;
         return Response::json($data);
     }
 
-    public function reports(Request $request)
-    {
-        $userid = filter_var($request->input('userid'), FILTER_VALIDATE_INT);
-        $monthInput = $request->input('month');
-        $month = null;
-        if ($monthInput !== null && !(is_string($monthInput) && trim($monthInput) === '')) {
-            $month = filter_var($monthInput, FILTER_VALIDATE_INT);
-        }
-        $year = filter_var($request->input('year'), FILTER_VALIDATE_INT);
-
-        if (
-            !$userid
-            || ($month !== null && ($month === false || $month < 1 || $month > 12))
-            || !$year
-            || $year < 1
-            || $year > 9999
-        ) {
-            $data['message'] = 'Valid user ID and year are required; month must be 1-12 when provided';
-            $data['data'] = (object) [];
-            $data['status'] = 400;
-            return Response::json($data);
-        }
-
-        if (!DB::table('users')->where('id', $userid)->exists()) {
-            $data['message'] = 'User not found';
-            $data['data'] = (object) [];
-            $data['status'] = 404;
-            return Response::json($data);
-        }
-
-        $rangeStart = $month === null
-            ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
-            : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
-        $rangeEnd = $month === null
-            ? \Carbon\Carbon::create($year, 12, 1)->endOfYear()
-            : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
-        $report = DB::table('bills')
-            ->where('userid', $userid)
-            ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
-            ->selectRaw('
-                COALESCE(SUM(total_amount), 0) as total_spent,
-                COALESCE(SUM(COALESCE(gst, COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0))), 0) as total_gst,
-                COUNT(*) as total_transactions,
-                COALESCE(SUM(coins), 0) as total_coins_earned
-            ')
-            ->first();
-
-        $data['message'] = 'Report retrieved successfully';
-        $data['data'] = [
-            'userid' => $userid,
-            'year' => $year,
-            'total_spent' => round((float) ($report->total_spent ?? 0), 2),
-            'total_gst' => round((float) ($report->total_gst ?? 0), 2),
-            'total_transactions' => (int) ($report->total_transactions ?? 0),
-            'total_coins_earned' => (int) ($report->total_coins_earned ?? 0),
-        ];
-        if ($month !== null) {
-            $data['data']['month'] = $month;
-        }
-        $data['status'] = 200;
-
-        return Response::json($data);
-    }
-
     public function wallet(Request $request)
     {
         $userid = $request->input('userid');
@@ -2558,11 +2494,395 @@ $gstnumber = $invoiceData['gst'] ?? null;
         return Response::json($data);
     }
 
+    public function reports(Request $request)
+    {
+        $userid = filter_var($request->input('userid'), FILTER_VALIDATE_INT);
+        $monthInput = $request->input('month');
+        $month = null;
+        if ($monthInput !== null && !(is_string($monthInput) && trim($monthInput) === '')) {
+            $month = filter_var($monthInput, FILTER_VALIDATE_INT);
+        }
+        $year = filter_var($request->input('year'), FILTER_VALIDATE_INT);
+
+        if (
+            !$userid
+            || ($month !== null && ($month === false || $month < 1 || $month > 12))
+            || !$year
+            || $year < 1
+            || $year > 9999
+        ) {
+            $data['message'] = 'Valid user ID and year are required; month must be 1-12 when provided';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        if (!DB::table('users')->where('id', $userid)->exists()) {
+            $data['message'] = 'User not found';
+            $data['data'] = (object) [];
+            $data['status'] = 404;
+            return Response::json($data);
+        }
+
+        $rangeStart = $month === null
+            ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
+            : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+        $rangeEnd = $month === null
+            ? \Carbon\Carbon::create($year, 12, 1)->endOfYear()
+            : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+        $report = DB::table('bills')
+            ->where('userid', $userid)
+            ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+            ->selectRaw('
+                COALESCE(SUM(total_amount), 0) as total_spent,
+                COALESCE(SUM(COALESCE(gst, COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0))), 0) as total_gst,
+                COUNT(*) as total_transactions,
+                COALESCE(SUM(coins), 0) as total_coins_earned
+            ')
+            ->first();
+
+        $data['message'] = 'Report retrieved successfully';
+        $data['data'] = [
+            'userid' => $userid,
+            'year' => $year,
+            'total_spent' => round((float) ($report->total_spent ?? 0), 2),
+            'total_gst' => round((float) ($report->total_gst ?? 0), 2),
+            'total_transactions' => (int) ($report->total_transactions ?? 0),
+            'total_coins_earned' => (int) ($report->total_coins_earned ?? 0),
+        ];
+        if ($month !== null) {
+            $data['data']['month'] = $month;
+        }
+
+        $data['status'] = 200;
+        $pdfResult = $this->generateReportPDF($request)->getData(true);
+        $csvResult = $this->generateReportCSV($request)->getData(true);
+        $data['data']['pdf'] = $pdfResult['data']['generated']['pdf_url'] ?? null;
+        $data['data']['csv'] = $csvResult['data']['generated']['csv_url'] ?? null;
+
+        $exportErrors = [];
+        foreach (['pdf' => $pdfResult, 'csv' => $csvResult] as $format => $result) {
+            if (($result['status'] ?? null) !== 200) {
+                $exportErrors[$format] = [
+                    'message' => $result['message'] ?? 'Export generation failed',
+                    'status' => $result['status'] ?? 500,
+                ];
+                if (($result['status'] ?? null) === 500) {
+                    $data['status'] = 500;
+                }
+            }
+        }
+        if ($exportErrors) {
+            $data['data']['export_errors'] = $exportErrors;
+        }
+
+        return Response::json($data);
+    }
+
+    public function generateReportPDF(Request $req){
+        $userid = filter_var($req->input('userid'), FILTER_VALIDATE_INT);
+        $monthInput = $req->input('month');
+        $month = ($monthInput === null || (is_string($monthInput) && trim($monthInput) === '') || $monthInput === 'all')
+            ? null
+            : filter_var($monthInput, FILTER_VALIDATE_INT);
+        $year = filter_var($req->input('year'), FILTER_VALIDATE_INT);
+
+        if (
+            !$userid
+            || $year === false
+            || $year < 1
+            || $year > 9999
+            || ($month !== null && ($month === false || $month < 1 || $month > 12))
+        ) {
+            $data['message'] = 'Valid user ID and year are required; month must be 1-12 when provided';
+            $data['data'] = (object) [];
+            $data['status'] = 400;
+            return Response::json($data);
+        }
+
+        try {
+            $rangeStart = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+            $rangeEnd = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->endOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+            $bills = DB::table('bills')
+                ->where('userid', $userid)
+                ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                ->orderBy('bill_date', 'desc')
+                ->get();
+
+            if ($bills->isEmpty()) {
+                return Response::json([
+                    'message' => 'No bills found for the requested period',
+                    'data' => (object) [],
+                    'status' => 204,
+                ]);
+            }
+
+            $period = $month === null ? (string) $year : $year . '_' . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+            $fileName = 'bills_' . $userid . '_' . $period . '_' . uniqid() . '.pdf';
+            $filePath = ($month === null ? 'yearly_bills_pdf/' : 'monthly_bills_pdf/') . $fileName;
+            $htmlContent = $this->generateReportPDFContent($bills, $year, $month);
+            $pdfContent = \PDF::loadHTML($htmlContent)->output();
+
+            if (!Storage::disk('public')->put($filePath, $pdfContent)) {
+                throw new \RuntimeException('Unable to save generated PDF');
+            }
+
+            $pdfId = null;
+            if ($month !== null) {
+                $existing = DB::table('monthly_bills_pdf')
+                    ->where('userid', $userid)
+                    ->where('month', $month)
+                    ->where('year', $year)
+                    ->first();
+
+                if ($existing) {
+                    if (Storage::disk('public')->exists($existing->bills_pdf)) {
+                        Storage::disk('public')->delete($existing->bills_pdf);
+                    }
+                    DB::table('monthly_bills_pdf')
+                        ->where('id', $existing->id)
+                        ->update(['bills_pdf' => $filePath, 'updated_at' => now()]);
+                    $pdfId = $existing->id;
+                } else {
+                    $pdfId = DB::table('monthly_bills_pdf')->insertGetId([
+                        'userid' => $userid,
+                        'month' => $month,
+                        'year' => $year,
+                        'bills_pdf' => $filePath,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            $generated = [
+                'pdf_id' => $pdfId,
+                'pdf_url' => url('storage/' . $filePath),
+                'file_path' => $filePath,
+                'month' => $month,
+                'year' => $year,
+            ];
+            if ($month !== null) {
+                $generated['month_name'] = \Carbon\Carbon::create($year, $month, 1)->format('F');
+            }
+
+            $data['message'] = ($month === null ? 'Yearly' : 'Monthly') . ' bills PDF generated successfully';
+            $data['data'] = ['generated' => $generated];
+            $data['status'] = 200;
+
+        } catch (\Exception $e) {
+            $data['message'] = 'Error generating PDF: ' . $e->getMessage();
+            $data['data'] = (object)[];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
 
 
+    private function generateReportPDFContent($bills, $year, $month) {
+        $title = $month === null ? 'Yearly Bills Report' : 'Monthly Bills Report';
+        $periodLabel = $month === null
+            ? '<p><strong>Year:</strong> ' . $year . '</p>'
+            : '<p><strong>Month:</strong> ' . \Carbon\Carbon::create($year, $month, 1)->format('F') . ', ' . $year . '</p>';
 
-    
-    
+        $html = '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: "DejaVu Sans", sans-serif; }
+                h2 { color: #333; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { background-color: #007bff; color: white; padding: 10px; text-align: left; }
+                td { border: 1px solid #ddd; padding: 8px; }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                .total-row { background-color: #e9ecef; font-weight: bold; }
+                .header { margin-bottom: 10px; }
+                .currency { text-align: right; }
+            </style>
+        </head>
+        <body>
+            <h2>' . $title . '</h2>
+            <div class="header">
+                ' . $periodLabel . '
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bill Date</th>
+                        <th>Bill Number</th>
+                        <th>Merchant</th>
+                        <th class="currency">Amount</th>
+                        <th class="currency">CGST</th>
+                        <th class="currency">IGST</th>
+                        <th class="currency">Total</th>
+                    </tr>
+                </thead>
+                <tbody>';
 
+        $totalAmount = 0;
+        $totalCGST = 0;
+        $totalIGST = 0;
+        $totalGross = 0;
+
+        foreach ($bills as $bill) {
+            $billDate = isset($bill->bill_date) ? $bill->bill_date : 'N/A';
+            $billNumber = $bill->bill_number ?? 'N/A';
+            $merchant = $bill->merchant_name ?? 'N/A';
+            $amount = floatval($bill->total_amount ?? 0);
+            $cgst = floatval($bill->cgst ?? 0);
+            $igst = floatval($bill->igst ?? 0);
+            $gross = floatval($bill->gross_amount ?? 0);
+
+            $totalAmount += $amount;
+            $totalCGST += $cgst;
+            $totalIGST += $igst;
+            $totalGross += $gross;
+
+            $html .= '
+                    <tr>
+                        <td>' . $billDate . '</td>
+                        <td>' . $billNumber . '</td>
+                        <td>' . $merchant . '</td>
+                        <td class="currency">&#8377;' . number_format($amount, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($cgst, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($igst, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($gross, 2) . '</td>
+                    </tr>';
+        }
+
+        $html .= '
+                    <tr class="total-row">
+                        <td colspan="3">TOTAL</td>
+                        <td class="currency">&#8377;' . number_format($totalAmount, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totalCGST, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totalIGST, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totalGross, 2) . '</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>';
+
+        return $html;
+    }
+
+
+    public function generateReportCSV(Request $req){
+        $userid = filter_var($req->input('userid'), FILTER_VALIDATE_INT);
+        $monthInput = $req->input('month');
+        $month = ($monthInput === null || (is_string($monthInput) && trim($monthInput) === '') || $monthInput === 'all')
+            ? null
+            : filter_var($monthInput, FILTER_VALIDATE_INT);
+        $year = filter_var($req->input('year'), FILTER_VALIDATE_INT);
+
+        if (
+            !$userid
+            || $year === false
+            || $year < 1
+            || $year > 9999
+            || ($month !== null && ($month === false || $month < 1 || $month > 12))
+        ) {
+            return Response::json([
+                'message' => 'Valid user ID and year are required; month must be 1-12 when provided',
+                'data' => (object) [],
+                'status' => 400,
+            ]);
+        }
+
+        try {
+            $rangeStart = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+            $rangeEnd = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->endOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+            $bills = DB::table('bills')
+                ->where('userid', $userid)
+                ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                ->orderBy('bill_date', 'desc')
+                ->get();
+
+            if ($bills->isEmpty()) {
+                return Response::json([
+                    'message' => 'No bills found for the requested period',
+                    'data' => (object) [],
+                    'status' => 204,
+                ]);
+            }
+
+            $totalAmount = 0;
+            $totalCGST = 0;
+            $totalIGST = 0;
+            $totalGross = 0;
+            $stream = fopen('php://temp', 'r+');
+            fputcsv($stream, ['Bill Date', 'Bill Number', 'Merchant', 'Amount', 'CGST', 'IGST', 'Total']);
+
+            foreach ($bills as $bill) {
+                $amount = (float) ($bill->total_amount ?? 0);
+                $cgst = (float) ($bill->cgst ?? 0);
+                $igst = (float) ($bill->igst ?? 0);
+                $gross = (float) ($bill->gross_amount ?? 0);
+                $totalAmount += $amount;
+                $totalCGST += $cgst;
+                $totalIGST += $igst;
+                $totalGross += $gross;
+
+                fputcsv($stream, [
+                    $bill->bill_date ?? 'N/A',
+                    $bill->bill_number ?? 'N/A',
+                    $bill->merchant_name ?? 'N/A',
+                    number_format($amount, 2, '.', ''),
+                    number_format($cgst, 2, '.', ''),
+                    number_format($igst, 2, '.', ''),
+                    number_format($gross, 2, '.', ''),
+                ]);
+            }
+
+            fputcsv($stream, [
+                'TOTAL',
+                '',
+                '',
+                number_format($totalAmount, 2, '.', ''),
+                number_format($totalCGST, 2, '.', ''),
+                number_format($totalIGST, 2, '.', ''),
+                number_format($totalGross, 2, '.', ''),
+            ]);
+            rewind($stream);
+            $csvContent = stream_get_contents($stream);
+            fclose($stream);
+
+            $period = $month === null ? (string) $year : $year . '_' . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+            $fileName = 'bills_' . $userid . '_' . $period . '_' . uniqid() . '.csv';
+            $filePath = ($month === null ? 'yearly_bills_csv/' : 'monthly_bills_csv/') . $fileName;
+
+            if (!Storage::disk('public')->put($filePath, $csvContent)) {
+                throw new \RuntimeException('Unable to save generated CSV');
+            }
+
+            $data['message'] = ($month === null ? 'Yearly' : 'Monthly') . ' bills CSV generated successfully';
+            $data['data'] = [
+                'generated' => [
+                    'csv_url' => url('storage/' . $filePath),
+                    'file_path' => $filePath,
+                    'month' => $month,
+                    'year' => $year,
+                ],
+            ];
+            $data['status'] = 200;
+        } catch (\Exception $e) {
+            $data['message'] = 'Error generating CSV: ' . $e->getMessage();
+            $data['data'] = (object) [];
+            $data['status'] = 500;
+        }
+
+        return Response::json($data);
+    }
 
 }
