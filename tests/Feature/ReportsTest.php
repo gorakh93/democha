@@ -119,19 +119,41 @@ class ReportsTest extends TestCase
 
         $pdfUrl = $response->json('data.pdf');
         $csvUrl = $response->json('data.csv');
+        $gstReportUrl = $response->json('data.gst_report');
         $this->assertIsString($pdfUrl);
         $this->assertIsString($csvUrl);
+        $this->assertIsString($gstReportUrl);
         $this->assertStringContainsString('/monthly_bills_pdf/', $pdfUrl);
         $this->assertStringContainsString('/monthly_bills_csv/', $csvUrl);
+        $this->assertStringContainsString('/monthly_gst_reports_pdf/', $gstReportUrl);
         $pdfPath = ltrim(str_replace('/storage/', '', parse_url($pdfUrl, PHP_URL_PATH)), '/');
         $csvPath = ltrim(str_replace('/storage/', '', parse_url($csvUrl, PHP_URL_PATH)), '/');
+        $gstReportPath = ltrim(str_replace('/storage/', '', parse_url($gstReportUrl, PHP_URL_PATH)), '/');
         $this->assertTrue(Storage::disk('public')->exists($pdfPath));
         $this->assertTrue(Storage::disk('public')->exists($csvPath));
+        $this->assertTrue(Storage::disk('public')->exists($gstReportPath));
 
         $csvRows = array_map('str_getcsv', explode("\n", trim(Storage::disk('public')->get($csvPath))));
         $this->assertSame(['Bill Date', 'Bill Number', 'Merchant', 'Amount', 'CGST', 'IGST', 'Total'], $csvRows[0]);
         $this->assertSame(['2026-11-20', 'INV-2', 'Shop Two', '59.00', '4.50', '0.00', '50.00'], $csvRows[1]);
         $this->assertSame('TOTAL', $csvRows[3][0]);
+
+        $controller = app(\App\Http\Controllers\apiController::class);
+        $gstContentMethod = new \ReflectionMethod($controller, 'generateGSTReportPDFContent');
+        $gstContentMethod->setAccessible(true);
+        $gstHtml = $gstContentMethod->invoke(
+            $controller,
+            DB::table('bills')->where('userid', 1)->whereMonth('bill_date', 11)->get(),
+            2026,
+            11
+        );
+        $this->assertStringContainsString('<th class="currency">CGST</th>', $gstHtml);
+        $this->assertStringContainsString('<th class="currency">SGST</th>', $gstHtml);
+        $this->assertStringContainsString('<th class="currency">IGST</th>', $gstHtml);
+        $this->assertStringContainsString('<th class="currency">GST</th>', $gstHtml);
+        $this->assertStringContainsString('TOTAL GST', $gstHtml);
+        $this->assertStringContainsString('&#8377;27.00', $gstHtml);
+        $this->assertStringNotContainsString('>Amount</th>', $gstHtml);
     }
 
     public function test_it_requires_a_valid_month_and_year(): void
@@ -181,12 +203,16 @@ class ReportsTest extends TestCase
 
             $pdfUrl = $response->json('data.pdf');
             $csvUrl = $response->json('data.csv');
+            $gstReportUrl = $response->json('data.gst_report');
             $this->assertIsString($pdfUrl);
             $this->assertIsString($csvUrl);
+            $this->assertIsString($gstReportUrl);
             $pdfPath = ltrim(str_replace('/storage/', '', parse_url($pdfUrl, PHP_URL_PATH)), '/');
             $csvPath = ltrim(str_replace('/storage/', '', parse_url($csvUrl, PHP_URL_PATH)), '/');
+            $gstReportPath = ltrim(str_replace('/storage/', '', parse_url($gstReportUrl, PHP_URL_PATH)), '/');
             $this->assertStringContainsString('yearly_bills_pdf/', $pdfPath);
             $this->assertStringContainsString('yearly_bills_csv/', $csvPath);
+            $this->assertStringContainsString('yearly_gst_reports_pdf/', $gstReportPath);
             $csvRows = array_map('str_getcsv', explode("\n", trim(Storage::disk('public')->get($csvPath))));
             $this->assertCount(4, $csvRows);
             $this->assertSame('TOTAL', $csvRows[3][0]);

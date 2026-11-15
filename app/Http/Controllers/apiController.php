@@ -2557,11 +2557,17 @@ $gstnumber = $invoiceData['gst'] ?? null;
         $data['status'] = 200;
         $pdfResult = $this->generateReportPDF($request)->getData(true);
         $csvResult = $this->generateReportCSV($request)->getData(true);
+        $gstReportResult = $this->generateGSTReportPDF($request)->getData(true);
         $data['data']['pdf'] = $pdfResult['data']['generated']['pdf_url'] ?? null;
         $data['data']['csv'] = $csvResult['data']['generated']['csv_url'] ?? null;
+        $data['data']['gst_report'] = $gstReportResult['data']['generated']['pdf_url'] ?? null;
 
         $exportErrors = [];
-        foreach (['pdf' => $pdfResult, 'csv' => $csvResult] as $format => $result) {
+        foreach ([
+            'pdf' => $pdfResult,
+            'csv' => $csvResult,
+            'gst_report' => $gstReportResult,
+        ] as $format => $result) {
             if (($result['status'] ?? null) !== 200) {
                 $exportErrors[$format] = [
                     'message' => $result['message'] ?? 'Export generation failed',
@@ -2681,6 +2687,161 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         return Response::json($data);
+    }
+
+    private function generateGSTReportPDF(Request $req)
+    {
+        $userid = filter_var($req->input('userid'), FILTER_VALIDATE_INT);
+        $monthInput = $req->input('month');
+        $month = ($monthInput === null || (is_string($monthInput) && trim($monthInput) === '') || $monthInput === 'all')
+            ? null
+            : filter_var($monthInput, FILTER_VALIDATE_INT);
+        $year = filter_var($req->input('year'), FILTER_VALIDATE_INT);
+
+        if (
+            !$userid
+            || $year === false
+            || $year < 1
+            || $year > 9999
+            || ($month !== null && ($month === false || $month < 1 || $month > 12))
+        ) {
+            return Response::json([
+                'message' => 'Valid user ID and year are required; month must be 1-12 when provided',
+                'data' => (object) [],
+                'status' => 400,
+            ]);
+        }
+
+        try {
+            $rangeStart = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->startOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+            $rangeEnd = $month === null
+                ? \Carbon\Carbon::create($year, 1, 1)->endOfYear()
+                : \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+            $bills = DB::table('bills')
+                ->where('userid', $userid)
+                ->whereBetween('bill_date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                ->orderBy('bill_date', 'desc')
+                ->get();
+
+            if ($bills->isEmpty()) {
+                return Response::json([
+                    'message' => 'No bills found for the requested period',
+                    'data' => (object) [],
+                    'status' => 204,
+                ]);
+            }
+
+            $period = $month === null
+                ? (string) $year
+                : $year . '_' . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+            $fileName = 'gst_report_' . $userid . '_' . $period . '_' . uniqid() . '.pdf';
+            $filePath = ($month === null ? 'yearly_gst_reports_pdf/' : 'monthly_gst_reports_pdf/') . $fileName;
+            $pdfContent = \PDF::loadHTML($this->generateGSTReportPDFContent($bills, $year, $month))->output();
+
+            if (!Storage::disk('public')->put($filePath, $pdfContent)) {
+                throw new \RuntimeException('Unable to save GST report PDF');
+            }
+
+            return Response::json([
+                'message' => ($month === null ? 'Yearly' : 'Monthly') . ' GST report generated successfully',
+                'data' => [
+                    'generated' => [
+                        'pdf_url' => url('storage/' . $filePath),
+                        'file_path' => $filePath,
+                        'month' => $month,
+                        'year' => $year,
+                    ],
+                ],
+                'status' => 200,
+            ]);
+        } catch (\Exception $e) {
+            return Response::json([
+                'message' => 'Error generating GST report PDF: ' . $e->getMessage(),
+                'data' => (object) [],
+                'status' => 500,
+            ]);
+        }
+    }
+
+    private function generateGSTReportPDFContent($bills, $year, $month)
+    {
+        $title = $month === null ? 'Yearly GST Report' : 'Monthly GST Report';
+        $periodLabel = $month === null
+            ? '<p><strong>Year:</strong> ' . $year . '</p>'
+            : '<p><strong>Month:</strong> ' . \Carbon\Carbon::create($year, $month, 1)->format('F') . ', ' . $year . '</p>';
+        $html = '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: "DejaVu Sans", sans-serif; }
+                h2 { color: #333; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { background-color: #007bff; color: white; padding: 10px; text-align: left; }
+                td { border: 1px solid #ddd; padding: 8px; }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                .total-row { background-color: #e9ecef; font-weight: bold; }
+                .header { margin-bottom: 10px; }
+                .currency { text-align: right; }
+            </style>
+        </head>
+        <body>
+            <h2>' . $title . '</h2>
+            <div class="header">' . $periodLabel . '</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bill Date</th>
+                        <th>Bill Number</th>
+                        <th>Merchant</th>
+                        <th class="currency">CGST</th>
+                        <th class="currency">SGST</th>
+                        <th class="currency">IGST</th>
+                        <th class="currency">GST</th>
+                    </tr>
+                </thead>
+                <tbody>';
+
+        $totals = ['cgst' => 0, 'sgst' => 0, 'igst' => 0, 'gst' => 0];
+        foreach ($bills as $bill) {
+            $cgst = (float) ($bill->cgst ?? 0);
+            $sgst = (float) ($bill->sgst ?? 0);
+            $igst = (float) ($bill->igst ?? 0);
+            $gst = (float) ($bill->gst ?? ($cgst + $sgst + $igst));
+            $totals['cgst'] += $cgst;
+            $totals['sgst'] += $sgst;
+            $totals['igst'] += $igst;
+            $totals['gst'] += $gst;
+
+            $html .= '
+                    <tr>
+                        <td>' . e($bill->bill_date ?? 'N/A') . '</td>
+                        <td>' . e($bill->bill_number ?? 'N/A') . '</td>
+                        <td>' . e($bill->merchant_name ?? 'N/A') . '</td>
+                        <td class="currency">&#8377;' . number_format($cgst, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($sgst, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($igst, 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($gst, 2) . '</td>
+                    </tr>';
+        }
+
+        $html .= '
+                    <tr class="total-row">
+                        <td colspan="3">TOTAL GST</td>
+                        <td class="currency">&#8377;' . number_format($totals['cgst'], 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totals['sgst'], 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totals['igst'], 2) . '</td>
+                        <td class="currency">&#8377;' . number_format($totals['gst'], 2) . '</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>';
+
+        return $html;
     }
 
 
