@@ -1987,6 +1987,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 'email' => null,
                 'order_number' => null,
                 'bill_file' => null,
+                'is_manual' => 1,
                 'created_at' => now()
             ]);
 

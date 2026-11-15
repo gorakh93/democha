@@ -30,6 +30,7 @@ class AddManualBillsTest extends TestCase
             $table->string('email')->nullable();
             $table->string('order_number')->nullable();
             $table->string('bill_file')->nullable();
+            $table->boolean('is_manual')->default(0);
             $table->timestamps();
         });
     }
@@ -56,6 +57,7 @@ class AddManualBillsTest extends TestCase
             'cgst' => 9,
             'sgst' => 9,
             'igst' => 0,
+            'is_manual' => 1,
         ]);
     }
 }
