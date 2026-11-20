@@ -13,8 +13,11 @@ Route::get('/test', function () {
     return ['success' => true,'message' => 'This is a test endpoint'];
 });
 
+
 Route::post('/login', [apiController::class,'login']);
 Route::post('/register', [apiController::class,'register']);
+
+Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('/get-profile', [apiController::class,'getProfile']);
 Route::post('/update-profile', [apiController::class,'updateProfile']);
@@ -28,6 +31,7 @@ Route::post('/update-address', [apiController::class,'update_address']);
 Route::post('/get-bills', [apiController::class,'get_bills']);
 
 Route::post('/save-bills', [apiController::class,'save_bills']);
+
 
 Route::post('/profile-image-upload', [apiController::class,'profileImageUpload']);
 Route::post('/bill-file-upload', [apiController::class,'billFileUpload']);
@@ -64,7 +68,7 @@ Route::post('/upcoming-bills', [apiController::class,'upcomingBills']);
 Route::post('/wallet', [apiController::class,'wallet']);
 Route::post('/reports', [apiController::class,'reports']);
 
-
+});
 
 //Route::post('/send-otp-mail', [apiController::class,'sendOtpMail']);
 

@@ -47,8 +47,11 @@ class apiController extends Controller
 
                 unset($user->password);
 
+                $token = $user->createToken('api-token')->plainTextToken;
+
                 $data['message'] = 'data get successfully';
                 $data['data'] = $user;
+                $data['token'] = $token;
                 $data['status'] = 200;
 
             }else{
