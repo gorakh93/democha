@@ -15,10 +15,12 @@ Route::get('/test', function () {
 
 
 Route::post('/login', [apiController::class,'login']);
+
 Route::post('/register', [apiController::class,'register']);
 
 Route::middleware('auth:sanctum')->group(function () {
 
+Route::post('/logout', [apiController::class, 'logout']);
 Route::post('/get-profile', [apiController::class,'getProfile']);
 Route::post('/update-profile', [apiController::class,'updateProfile']);
 

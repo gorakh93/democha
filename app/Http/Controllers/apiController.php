@@ -8,9 +8,11 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 use App\Models\User;
 use App\Models\Address;
@@ -72,6 +74,29 @@ class apiController extends Controller
         return Response::json($data);
 
     }
+
+
+
+    function logout(Request $req){
+
+        $accessToken = $req->user()->currentAccessToken();
+        if ($accessToken instanceof PersonalAccessToken) {
+            $accessToken->delete();
+        }
+
+        if ($req->hasSession()) {
+            Auth::guard('web')->logout();
+            $req->session()->invalidate();
+            $req->session()->regenerateToken();
+        }
+
+        $data['message'] = 'User logged out successfully';
+        $data['data'] = [];
+        $data['status'] = 200;
+
+        return Response::json($data);
+
+      }
 
 
     /*register api*/
