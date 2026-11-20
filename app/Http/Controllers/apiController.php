@@ -2421,6 +2421,10 @@ $gstnumber = $invoiceData['gst'] ?? null;
             $monthStart = now()->startOfMonth()->toDateString();
             $monthEnd = now()->endOfMonth()->toDateString();
             $scannedBills = DB::table('bills')->where('userid', $userid)->count();
+            $pendingReviews = DB::table('bills')
+                ->where('userid', $userid)
+                ->where('is_process', 1)
+                ->count();
             $monthlyAmount = DB::table('bills')
                 ->where('userid', $userid)
                 ->whereBetween('bill_date', [$monthStart, $monthEnd])
@@ -2441,7 +2445,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 'm_left' => $remainingBudget,
                 'total_coin' => (int) ($user->coins ?? 0),
                 'scanned_bills' => (int) $scannedBills,
-                'pending_reviews' => [],
+                'pending_reviews' => (int) $pendingReviews,
             ];
             $data['status'] = 200;
         } catch (\Exception $e) {

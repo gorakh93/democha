@@ -27,6 +27,7 @@ class HomeMonthlyBudgetTest extends TestCase
             $table->unsignedBigInteger('userid');
             $table->date('bill_date')->nullable();
             $table->decimal('total_amount', 10, 2)->nullable();
+            $table->integer('is_process')->default(0);
         });
     }
 
@@ -45,26 +46,31 @@ class HomeMonthlyBudgetTest extends TestCase
                 'userid' => $userId,
                 'bill_date' => $now->copy()->startOfMonth()->toDateString(),
                 'total_amount' => 25.50,
+                'is_process' => 1,
             ],
             [
                 'userid' => $userId,
                 'bill_date' => $now->copy()->toDateString(),
                 'total_amount' => 30,
+                'is_process' => 0,
             ],
             [
                 'userid' => $userId,
                 'bill_date' => $now->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
                 'total_amount' => 100,
+                'is_process' => 1,
             ],
             [
                 'userid' => $userId,
                 'bill_date' => $now->copy()->addMonthNoOverflow()->startOfMonth()->toDateString(),
                 'total_amount' => 70,
+                'is_process' => 0,
             ],
             [
                 'userid' => $userId + 1,
                 'bill_date' => $now->copy()->toDateString(),
                 'total_amount' => 500,
+                'is_process' => 1,
             ],
         ]);
 
@@ -78,7 +84,7 @@ class HomeMonthlyBudgetTest extends TestCase
                     'm_left' => 144.5,
                     'total_coin' => 125,
                     'scanned_bills' => 4,
-                    'pending_reviews' => [],
+                    'pending_reviews' => 2,
                 ],
                 'status' => 200,
             ]);
