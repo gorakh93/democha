@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class HomeMonthlyBudgetTest extends TestCase
@@ -17,6 +19,7 @@ class HomeMonthlyBudgetTest extends TestCase
             $table->id();
             $table->decimal('m_budget', 10, 2)->nullable();
             $table->decimal('m_left', 10, 2)->nullable();
+            $table->integer('coins')->default(0);
         });
 
         Schema::create('bills', function (Blueprint $table): void {
@@ -32,7 +35,9 @@ class HomeMonthlyBudgetTest extends TestCase
         $userId = DB::table('users')->insertGetId([
             'm_budget' => 200,
             'm_left' => 200,
+            'coins' => 125,
         ]);
+        Sanctum::actingAs(User::findOrFail($userId));
         $now = now();
 
         DB::table('bills')->insert([
@@ -56,6 +61,11 @@ class HomeMonthlyBudgetTest extends TestCase
                 'bill_date' => $now->copy()->addMonthNoOverflow()->startOfMonth()->toDateString(),
                 'total_amount' => 70,
             ],
+            [
+                'userid' => $userId + 1,
+                'bill_date' => $now->copy()->toDateString(),
+                'total_amount' => 500,
+            ],
         ]);
 
         $this->postJson('/api/home', ['userid' => $userId])
@@ -66,6 +76,9 @@ class HomeMonthlyBudgetTest extends TestCase
                     'monthly_budget' => 200,
                     'current_month_amount' => 55.5,
                     'm_left' => 144.5,
+                    'total_coin' => 125,
+                    'scanned_bills' => 4,
+                    'pending_reviews' => [],
                 ],
                 'status' => 200,
             ]);

@@ -2409,7 +2409,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
         }
 
         try {
-            $user = DB::table('users')->where('id', $userid)->first(['id', 'm_budget']);
+            $user = DB::table('users')->where('id', $userid)->first(['id', 'm_budget', 'coins']);
 
             if (!$user) {
                 $data['message'] = 'User not found';
@@ -2420,6 +2420,7 @@ $gstnumber = $invoiceData['gst'] ?? null;
 
             $monthStart = now()->startOfMonth()->toDateString();
             $monthEnd = now()->endOfMonth()->toDateString();
+            $scannedBills = DB::table('bills')->where('userid', $userid)->count();
             $monthlyAmount = DB::table('bills')
                 ->where('userid', $userid)
                 ->whereBetween('bill_date', [$monthStart, $monthEnd])
@@ -2438,6 +2439,9 @@ $gstnumber = $invoiceData['gst'] ?? null;
                 'monthly_budget' => $monthlyBudget,
                 'current_month_amount' => $monthlyAmount,
                 'm_left' => $remainingBudget,
+                'total_coin' => (int) ($user->coins ?? 0),
+                'scanned_bills' => (int) $scannedBills,
+                'pending_reviews' => [],
             ];
             $data['status'] = 200;
         } catch (\Exception $e) {
